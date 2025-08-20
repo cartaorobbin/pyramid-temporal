@@ -17,7 +17,8 @@ def test_user_creation_and_enrichment(
     webtest_app,
     temporal_worker,
     temporal_client,
-    dbsession
+    dbsession,
+    poll_query
 ):
     """Test complete flow: create user → trigger workflow → verify enrichment.
     
@@ -67,13 +68,26 @@ def test_user_creation_and_enrichment(
     assert user.email == user_data['email']
     assert user.enriched is False  # Should not be enriched yet
     
-    # 3. Wait for workflow completion with simple sleep
-    logger.info("Step 3: Waiting 10 seconds for workflow completion")
+    # 3. Wait for workflow completion using poll_query
+    logger.info("Step 3: Polling for user enrichment completion")
     
-    time.sleep(3)
+    # Create query to check for enriched user
+    enriched_query = dbsession.query(User).filter(
+        User.id == user_id, 
+        User.enriched == True
+    )
     
-    # 4. Verify user was enriched
-    logger.info("Step 4: Verifying user enrichment after workflow completion")
+    # Poll until user is enriched or timeout
+    success = poll_query(
+        enriched_query, 
+        timeout=15.0, 
+        description=f"user {user_id} enrichment"
+    )
+    
+    assert success, "User should be enriched within timeout"
+    
+    # 4. Verify final state
+    logger.info("Step 4: Verifying final user state")
     
     user = dbsession.query(User).filter(User.id == user_id).first()
     

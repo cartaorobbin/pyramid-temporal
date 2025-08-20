@@ -201,40 +201,40 @@ def webtest_app(pyramid_app, tm, dbsession):
 
 
 @pytest.fixture
-def poll_for_enrichment(dbsession):
-    """Fixture that returns a function to poll for user enrichment.
+def poll_query(dbsession):
+    """Fixture that returns a function to poll for query results.
     
-    Returns a function that polls the database until a user is enriched.
+    Returns a function that polls the database until a query returns results.
     """
-    def _poll(user_id: int, timeout: float = 10.0, interval: float = 0.5) -> bool:
-        """Poll database until user is enriched or timeout.
+    def _poll(query, timeout: float = 10.0, interval: float = 0.5, description: str = "query") -> bool:
+        """Poll database until query returns results or timeout.
         
         Args:
-            user_id: User ID to check
+            query: SQLAlchemy query to execute
             timeout: Maximum time to wait in seconds
             interval: Time between checks in seconds
+            description: Description of what we're polling for (for logging)
             
         Returns:
-            bool: True if user was enriched, False if timeout
+            bool: True if query returned results, False if timeout
         """
+        logger.info("Starting to poll for %s", description)
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            # Refresh session and check user
+            # Refresh session and execute query
             dbsession.expire_all()
-            user = dbsession.query(User).filter(User.id == user_id).first()
+            result = query.first()
             
-            if user:
-                logger.debug("Polling: User %s enriched status: %s", user_id, user.enriched)
-                if user.enriched:
-                    logger.info("User %s was enriched successfully", user_id)
-                    return True
+            if result:
+                logger.info("Poll successful: %s found", description)
+                return True
             else:
-                logger.debug("Polling: User %s not found", user_id)
+                logger.debug("Polling: %s not found yet", description)
                 
             time.sleep(interval)
         
-        logger.warning("Timeout waiting for user %s to be enriched", user_id)
+        logger.warning("Timeout waiting for %s", description)
         return False
     
     return _poll
