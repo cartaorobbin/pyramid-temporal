@@ -1,0 +1,435 @@
+---
+alwaysApply: true
+---
+
+# Tools and Setup Guide
+
+## Local Development Environment Setup
+
+### Prerequisites
+- pyenv (Python version management)
+- pyenv-virtualenv (Virtual environment management)
+- direnv (Environment variable management)
+
+### Installation Steps
+
+#### 1. Install pyenv and pyenv-virtualenv (macOS)
+```bash
+# Install pyenv
+brew install pyenv
+
+# Install pyenv-virtualenv
+brew install pyenv-virtualenv
+
+# Install direnv
+brew install direnv
+```
+
+#### 2. Configure Shell (add to ~/.zshrc or ~/.bashrc)
+```bash
+# pyenv configuration
+export PATH="$HOME/.pyenv/bin:$PATH"
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+
+# direnv configuration
+eval "$(direnv hook zsh)"  # or bash
+```
+
+#### 3. Project Setup
+```bash
+# Install Python 3.11 (or latest stable)
+pyenv install 3.11.7
+
+# Create virtual environment for the project
+pyenv virtualenv 3.11.7 pyramid-temporal
+
+# Set local Python version
+pyenv local pyramid-temporal
+
+# Install Poetry in the virtual environment
+pip install poetry
+
+# Configure Poetry to use in-project virtual environments
+poetry config virtualenvs.in-project true
+```
+
+#### 4. Environment Configuration
+Create `.envrc` file in project root:
+```bash
+# .envrc
+use python $(pyenv which python)
+export PYTHONPATH="${PWD}:${PYTHONPATH}"
+export PROJECT_NAME="pyramid-temporal"
+export DEVELOPMENT_MODE="true"
+```
+
+Allow direnv to load the environment:
+```bash
+direnv allow
+```
+
+#### 5. Install Dependencies
+```bash
+# Install project dependencies
+poetry install
+
+# Install pre-commit hooks
+poetry run pre-commit install
+```
+
+### Development Workflow
+
+#### Daily Development
+```bash
+# Navigate to project
+cd /path/to/pyramid-temporal
+
+# Environment should auto-activate via direnv
+# Verify with:
+which python  # Should show project-specific Python
+poetry env info  # Should show project virtual environment
+
+# Run tests
+poetry run pytest
+
+# Run linting
+poetry run ruff check .
+poetry run mypy pyramid_temporal
+
+# Run formatting
+poetry run black .
+poetry run isort .
+```
+
+#### Adding Dependencies
+```bash
+# Add production dependency
+poetry add package_name
+
+# Add development dependency  
+poetry add --group dev package_name
+
+# Add documentation dependency
+poetry add --group docs package_name
+```
+
+#### Managing Python Versions
+```bash
+# List available Python versions
+pyenv versions
+
+# Switch Python version for project
+pyenv local 3.11.7
+
+# Recreate virtual environment if needed
+pyenv virtualenv-delete pyramid-temporal
+pyenv virtualenv 3.11.7 pyramid-temporal
+pyenv local pyramid-temporal
+```
+
+### Troubleshooting
+
+#### Virtual Environment Issues
+```bash
+# Check current environment
+poetry env info
+
+# Remove and recreate poetry environment
+poetry env remove --all
+poetry install
+
+# Verify pyenv setup
+pyenv doctor
+```
+
+#### direnv Issues
+```bash
+# Reload environment
+direnv reload
+
+# Check environment variables
+direnv status
+
+# Debug environment loading
+direnv exec . env | grep PYTHON
+```
+
+#### Dependencies Issues
+```bash
+# Clear poetry cache
+poetry cache clear --all pypi
+
+# Update lock file
+poetry lock --no-update
+
+# Install from scratch
+rm poetry.lock
+poetry install
+```
+
+### IDE Configuration
+
+#### VS Code / Cursor
+Add to `.vscode/settings.json`:
+```json
+{
+    "python.pythonPath": ".venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.mypyEnabled": true,
+    "python.formatting.provider": "black",
+    "python.sortImports.path": "isort",
+    "editor.formatOnSave": true
+}
+```
+
+### Environment Verification
+After setup, verify everything works:
+```bash
+# Check Python version and location
+python --version
+which python
+
+# Check Poetry environment
+poetry env info
+
+# Check direnv
+echo $PROJECT_NAME
+echo $PYTHONPATH
+
+# Run basic tests
+poetry run python -c "import sys; print(sys.path)"
+poetry run pytest --version
+```
+
+## Alternative: Dev Container Setup
+
+For containerized development, see `.devcontainer/` configuration (future implementation).
+
+### Benefits of Local Setup
+- Faster development cycle
+- Better IDE integration
+- Direct access to system tools
+- No container overhead
+
+### Benefits of Dev Container
+- Consistent environment across team
+- No local tool installation required
+- Isolation from host system
+- Reproducible builds# Tools and Setup Guide
+
+## Local Development Environment Setup
+
+### Prerequisites
+- pyenv (Python version management)
+- pyenv-virtualenv (Virtual environment management)
+- direnv (Environment variable management)
+
+### Installation Steps
+
+#### 1. Install pyenv and pyenv-virtualenv (macOS)
+```bash
+# Install pyenv
+brew install pyenv
+
+# Install pyenv-virtualenv
+brew install pyenv-virtualenv
+
+# Install direnv
+brew install direnv
+```
+
+#### 2. Configure Shell (add to ~/.zshrc or ~/.bashrc)
+```bash
+# pyenv configuration
+export PATH="$HOME/.pyenv/bin:$PATH"
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+
+# direnv configuration
+eval "$(direnv hook zsh)"  # or bash
+```
+
+#### 3. Project Setup
+```bash
+# Install Python 3.11 (or latest stable)
+pyenv install 3.11.7
+
+# Create virtual environment for the project
+pyenv virtualenv 3.11.7 pyramid-temporal
+
+# Set local Python version
+pyenv local pyramid-temporal
+
+# Install Poetry in the virtual environment
+pip install poetry
+
+# Configure Poetry to use in-project virtual environments
+poetry config virtualenvs.in-project true
+```
+
+#### 4. Environment Configuration
+Create `.envrc` file in project root:
+```bash
+# .envrc
+use python $(pyenv which python)
+export PYTHONPATH="${PWD}:${PYTHONPATH}"
+export PROJECT_NAME="pyramid-temporal"
+export DEVELOPMENT_MODE="true"
+```
+
+Allow direnv to load the environment:
+```bash
+direnv allow
+```
+
+#### 5. Install Dependencies
+```bash
+# Install project dependencies
+poetry install
+
+# Install pre-commit hooks
+poetry run pre-commit install
+```
+
+### Development Workflow
+
+#### Daily Development
+```bash
+# Navigate to project
+cd /path/to/pyramid-temporal
+
+# Environment should auto-activate via direnv
+# Verify with:
+which python  # Should show project-specific Python
+poetry env info  # Should show project virtual environment
+
+# Run tests
+poetry run pytest
+
+# Run linting
+poetry run ruff check .
+poetry run mypy pyramid_temporal
+
+# Run formatting
+poetry run black .
+poetry run isort .
+```
+
+#### Adding Dependencies
+```bash
+# Add production dependency
+poetry add package_name
+
+# Add development dependency  
+poetry add --group dev package_name
+
+# Add documentation dependency
+poetry add --group docs package_name
+```
+
+#### Managing Python Versions
+```bash
+# List available Python versions
+pyenv versions
+
+# Switch Python version for project
+pyenv local 3.11.7
+
+# Recreate virtual environment if needed
+pyenv virtualenv-delete pyramid-temporal
+pyenv virtualenv 3.11.7 pyramid-temporal
+pyenv local pyramid-temporal
+```
+
+### Troubleshooting
+
+#### Virtual Environment Issues
+```bash
+# Check current environment
+poetry env info
+
+# Remove and recreate poetry environment
+poetry env remove --all
+poetry install
+
+# Verify pyenv setup
+pyenv doctor
+```
+
+#### direnv Issues
+```bash
+# Reload environment
+direnv reload
+
+# Check environment variables
+direnv status
+
+# Debug environment loading
+direnv exec . env | grep PYTHON
+```
+
+#### Dependencies Issues
+```bash
+# Clear poetry cache
+poetry cache clear --all pypi
+
+# Update lock file
+poetry lock --no-update
+
+# Install from scratch
+rm poetry.lock
+poetry install
+```
+
+### IDE Configuration
+
+#### VS Code / Cursor
+Add to `.vscode/settings.json`:
+```json
+{
+    "python.pythonPath": ".venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.mypyEnabled": true,
+    "python.formatting.provider": "black",
+    "python.sortImports.path": "isort",
+    "editor.formatOnSave": true
+}
+```
+
+### Environment Verification
+After setup, verify everything works:
+```bash
+# Check Python version and location
+python --version
+which python
+
+# Check Poetry environment
+poetry env info
+
+# Check direnv
+echo $PROJECT_NAME
+echo $PYTHONPATH
+
+# Run basic tests
+poetry run python -c "import sys; print(sys.path)"
+poetry run pytest --version
+```
+
+## Alternative: Dev Container Setup
+
+For containerized development, see `.devcontainer/` configuration (future implementation).
+
+### Benefits of Local Setup
+- Faster development cycle
+- Better IDE integration
+- Direct access to system tools
+- No container overhead
+
+### Benefits of Dev Container
+- Consistent environment across team
+- No local tool installation required
+- Isolation from host system
+- Reproducible builds

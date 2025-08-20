@@ -1,0 +1,50 @@
+site_name: pyramid-temporal
+repo_url: https://github.com/tomas_correa/pyramid-temporal
+site_url: https://tomas_correa.github.io/pyramid-temporal
+site_description: This project bind the config and transaction from pyramid to temporal
+site_author: Robbin dev team
+edit_uri: edit/main/docs/
+repo_name: tomas_correa/pyramid-temporal
+copyright: Maintained by <a href="https://tomas_correa.com">Florian</a>.
+
+nav:
+  - Home: index.md
+  - Modules: modules.md
+plugins:
+  - search
+  - mkdocstrings
+
+theme:
+  name: readthedocs
+  feature:
+    tabs: true
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/tomas_correa/pyramid-temporal
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pyramid-temporal
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true

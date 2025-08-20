@@ -1,0 +1,228 @@
+---
+alwaysApply: true
+---
+# Development Rules for pyramid-temporal
+
+This document contains development guidelines and rules for working on the **pyramid-temporal** project. These rules are designed to ensure consistent, high-quality code and effective collaboration.
+
+## Core Development Principles
+
+### 1. Plan Before Coding ⭐
+**ALWAYS plan before writing any code.**
+
+- **Think first, code second**: Before touching any code, take time to understand the problem and design the solution
+- **Create a clear plan**: Write down what you're going to do, how you're going to do it, and what the expected outcome is
+- **Consider edge cases**: Think through potential issues and how to handle them
+- **Review existing code**: Understand how your changes fit into the existing codebase
+- **Break down complex tasks**: Split large features into smaller, manageable pieces
+
+### 2. Task Management with Planning Files ⭐
+**ALWAYS maintain planning files to track what we did.**
+
+- **Organized structure**: Use `planning/` directory for all planning files
+- **Active vs Backlog**: Use `planning/general.md` for CURRENT tasks being worked on, `planning/backlog.md` for planned future tasks
+- **Task Flow**: Move tasks from `planning/backlog.md` → `planning/general.md` → `planning/done.md` as they progress
+- **Focus Management**: Keep `planning/general.md` focused (max 1-3 active task groups)
+- **Create/update files**: Before starting any work, document what you plan to do in the appropriate planning file
+- **Track progress**: Update the files as you complete tasks
+- **Document decisions**: Record important decisions and why they were made
+- **Include completion status**: Mark tasks as TODO, IN PROGRESS, DONE, or BLOCKED
+- **Reference issues/PRs**: Link to relevant GitHub issues or pull requests
+
+## Project Structure Guidelines
+
+### Planning Directory Structure
+```
+pyramid-temporal/
+├── planning/
+│   ├── general.md      # Current active tasks (max 1-3 task groups)
+│   ├── backlog.md     # Future planned tasks
+│   └── done.md        # Completed tasks archive
+├── pyramid_temporal/    # Main package code
+├── tests/             # Test files
+├── docs/              # Documentation
+└── pyproject.toml     # Poetry configuration
+```
+
+### Code Organization
+- **Main package**: All source code goes in `pyramid_temporal/`
+- **Tests**: Mirror the package structure in `tests/`
+- **Documentation**: Use `docs/` for project documentation
+- **Configuration**: Keep configuration in `pyproject.toml`
+
+## Poetry Workflow Guidelines
+
+### Dependency Management
+- **Add dependencies**: `poetry add package_name`
+- **Add dev dependencies**: `poetry add --group dev package_name`
+- **Lock dependencies**: Always commit `poetry.lock`
+- **Install project**: `poetry install` (includes dev dependencies)
+- **Production install**: `poetry install --only main`
+
+### Virtual Environment
+- **Activate shell**: `poetry shell`
+- **Run commands**: `poetry run command`
+- **Check environment**: `poetry env info`
+
+### Version Management
+- **Update version**: `poetry version patch|minor|major`
+- **Build package**: `poetry build`
+- **Publish**: `poetry publish`
+
+## Code Style and Formatting
+
+### Formatting Tools
+- **Black**: Code formatting (`poetry run black .`)
+- **isort**: Import sorting (`poetry run isort .`)
+- **Ruff**: Linting and more (`poetry run ruff check .`)
+- **mypy**: Type checking (`poetry run mypy pyramid_temporal`)
+
+### Pre-commit Hooks
+- Install: `poetry run pre-commit install`
+- Run manually: `poetry run pre-commit run --all-files`
+- All checks must pass before committing
+
+### Code Quality Standards
+- **Type hints**: Use type hints for all functions and classes
+- **Docstrings**: Follow Google or NumPy docstring style
+- **Line length**: 88 characters (Black default)
+- **Imports**: Group and sort with isort
+- **Naming**: Use snake_case for functions/variables, PascalCase for classes
+
+## Testing Guidelines
+
+### Test Structure
+- **Mirror package structure**: `tests/` should mirror `pyramid_temporal/`
+- **Test file naming**: `test_module_name.py`
+- **Test function naming**: `test_function_name_scenario()`
+
+### Testing Tools
+- **pytest**: Primary testing framework
+- **coverage**: Code coverage measurement
+- **pytest-cov**: Coverage integration for pytest
+
+### Test Commands
+- **Run tests**: `poetry run pytest`
+- **With coverage**: `poetry run pytest --cov=pyramid_temporal`
+- **Coverage report**: `poetry run coverage html`
+
+### Test Quality
+- **Test coverage**: Aim for >90% coverage
+- **Test types**: Unit tests, integration tests, end-to-end tests
+- **Mock external dependencies**: Use `unittest.mock` or `pytest-mock`
+- **Test data**: Use fixtures for reusable test data
+
+## Git Workflow
+
+### Branch Strategy
+- **Main branch**: `main` (production-ready code)
+- **Feature branches**: `feature/description` or `feat/description`
+- **Bug fixes**: `fix/description` or `bugfix/description`
+- **Hotfixes**: `hotfix/description`
+
+### Commit Guidelines
+- **Conventional commits**: Use conventional commit format
+- **Commit messages**: Clear, descriptive messages
+- **Atomic commits**: One logical change per commit
+- **Commit frequently**: Small, frequent commits are better
+
+### Pull Request Process
+1. Create feature branch from `main`
+2. Make changes following these guidelines
+3. Run all tests and checks locally
+4. Create pull request with clear description
+5. Wait for CI/CD to pass
+6. Request code review
+7. Address feedback
+8. Merge when approved
+
+## Documentation Standards
+
+### Code Documentation
+- **Docstrings**: All public functions, classes, and modules
+- **Type hints**: Comprehensive type annotations
+- **Comments**: Explain complex logic, not obvious code
+- **README**: Keep project README up to date
+
+### Project Documentation
+- **API docs**: Auto-generated from docstrings
+- **User guides**: How to use the project
+- **Developer guides**: How to contribute
+- **Changelog**: Document all changes
+
+## Development Environment
+
+### Required Tools
+- **Python**: Version specified in `pyproject.toml`
+- **Poetry**: Latest stable version
+- **Git**: Version control
+- **Pre-commit**: Git hooks for quality checks
+
+### IDE Configuration
+- **Editor config**: Follow `.editorconfig` settings
+- **Linting**: Enable real-time linting
+- **Formatting**: Auto-format on save
+- **Type checking**: Enable mypy integration
+
+### Environment Setup
+1. Clone repository
+2. Install Poetry
+3. Run `poetry install`
+4. Run `poetry run pre-commit install`
+5. Create feature branch
+6. Start developing!
+
+## Common Commands
+
+### Development Workflow
+```bash
+# Setup
+poetry install
+poetry run pre-commit install
+
+# Before starting work
+git checkout main
+git pull origin main
+git checkout -b feature/my-feature
+
+# During development
+poetry run pytest                    # Run tests
+poetry run black .                   # Format code
+poetry run ruff check .             # Lint code
+poetry run mypy pyramid_temporal             # Type check
+
+# Before committing
+poetry run pre-commit run --all-files  # Run all checks
+git add .
+git commit -m "feat: add new feature"
+git push origin feature/my-feature
+```
+
+### Quality Checks
+```bash
+# Full quality check suite
+poetry run pytest --cov=pyramid_temporal
+poetry run black --check .
+poetry run isort --check .
+poetry run ruff check .
+poetry run mypy pyramid_temporal
+```
+
+## Troubleshooting
+
+### Common Issues
+- **Poetry lock conflicts**: `poetry lock --no-update`
+- **Pre-commit issues**: `poetry run pre-commit clean`
+- **Import errors**: Check `PYTHONPATH` and virtual environment
+- **Test failures**: Ensure dependencies are installed
+
+### Getting Help
+1. Check this document first
+2. Review project documentation
+3. Search existing issues
+4. Ask team members
+5. Create new issue with detailed description
+
+---
+
+**Remember**: When in doubt, plan first, code second! 🚀
