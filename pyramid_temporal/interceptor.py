@@ -22,19 +22,19 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
     def __init__(
         self,
         next_interceptor: ActivityInboundInterceptor,
-        transaction_manager: Optional[object] = None,
-        db_session_factory: Optional[Any] = None,
+        transaction_manager: object,
+        db_session_factory: Any,
     ) -> None:
         """Initialize the interceptor.
 
         Args:
             next_interceptor: The next interceptor in the chain
-            transaction_manager: zope.transaction manager instance
-            db_session_factory: Database session factory for creating sessions
+            transaction_manager: zope.transaction manager instance (required)
+            db_session_factory: Database session factory for creating sessions (required)
         """
         super().__init__(next_interceptor)
-        self._transaction_manager = transaction_manager
-        self._db_session_factory = db_session_factory
+        self.transaction_manager = transaction_manager
+        self.db_session_factory = db_session_factory
 
     async def execute_activity(self, input: Any) -> Any:
         """Execute activity with automatic transaction management and session injection.
@@ -62,22 +62,16 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         logger.info("Starting activity '%s' with transaction management", activity_name)
         
         # Get database session from session factory
-        if not self._db_session_factory:
-            logger.error("No db_session_factory available for activity '%s'", activity_name)
-            raise RuntimeError("Database session factory not configured on interceptor")
-        
-        # Get the session (this should return the existing session, not create a new one)
-        session = self._db_session_factory()
+        session = self.db_session_factory()
         
         # Store session in activity context for access by the activity
         # We'll store it in a thread-local context
         threading.current_thread().pyramid_temporal_session = session
         
         # Begin transaction if not already active
-        if not is_transaction_active(self._transaction_manager):
+        if not is_transaction_active(self.transaction_manager):
             try:
-                tm = self._transaction_manager or __import__('transaction').manager
-                tm.begin()
+                self.transaction_manager.begin()
                 logger.debug("Started new transaction for activity '%s'", activity_name)
             except Exception as e:
                 logger.error("Failed to start transaction for activity '%s': %s", activity_name, e)
@@ -92,7 +86,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
             result = await super().execute_activity(input)
             
             # Commit transaction on success
-            safe_commit(self._transaction_manager)
+            safe_commit(self.transaction_manager)
             logger.info("Activity '%s' executed successfully, transaction committed", activity_name)
             
             return result
@@ -100,7 +94,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         except Exception as e:
             # Abort transaction on any exception
             logger.warning("Activity '%s' failed with exception: %s, aborting transaction", activity_name, e)
-            safe_abort(self._transaction_manager)
+            safe_abort(self.transaction_manager)
             raise
             
         finally:
@@ -127,10 +121,10 @@ class PyramidTemporalInterceptor(Interceptor):
             transaction_manager: zope.transaction manager instance
             db_session_factory: Database session factory for creating sessions
         """
-        self._transaction_manager = transaction_manager
-        self._db_session_factory = db_session_factory
+        self.transaction_manager = transaction_manager
+        self.db_session_factory = db_session_factory
         logger.info("Initialized PyramidTemporalInterceptor with transaction manager: %s", 
-                   type(self._transaction_manager).__name__ if self._transaction_manager else "default")
+                   type(self.transaction_manager).__name__ if self.transaction_manager else "default")
 
     def intercept_activity(
         self, next_interceptor: ActivityInboundInterceptor
@@ -145,6 +139,6 @@ class PyramidTemporalInterceptor(Interceptor):
         """
         return TransactionalActivityInterceptor(
             next_interceptor, 
-            self._transaction_manager, 
-            self._db_session_factory
+            self.transaction_manager, 
+            self.db_session_factory
         )
