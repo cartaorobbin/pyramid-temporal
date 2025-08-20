@@ -10,12 +10,16 @@ packages = [
   {include = "pyramid_temporal"}
 ]
 
+[tool.poetry.scripts]
+ptemporal-worker = "pyramid_temporal.cli:ptemporal_worker"
+
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 temporalio = "^1.15.0"
 transaction = "^5.0"
 zope-interface = "^7.2"
 pyramid = "^2.0.2"
+click = "^8.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"

@@ -39,17 +39,32 @@ Create a bridge between Pyramid and Temporal that implements the Unit of Work pa
 - [x] Register interceptor as utility for dependency injection
 - [x] Provide easy setup for Pyramid applications
 
-### 5. Testing [TODO]
+### 5. CLI Command Implementation [COMPLETED]
+- [x] Add click dependency for CLI support
+- [x] Create pyramid_temporal/cli.py module
+- [x] Implement ptemporal-worker command
+  - Takes Pyramid INI file for application bootstrap
+  - Takes Python path to worker factory function
+  - Bootstraps Pyramid application with pyramid-temporal integration
+  - Dynamically imports and calls worker factory function
+  - Starts worker and runs forever
+- [x] Add console script entry point to pyproject.toml
+- [x] Add comprehensive error handling and logging
+- [x] Document worker factory function signature and usage
+
+### 6. Testing [TODO]
 - [ ] Unit tests for transaction manager
 - [ ] Integration tests with mock Temporal activities
 - [ ] Test transaction rollback scenarios
 - [ ] Test Pyramid integration
+- [ ] Test CLI command functionality
 
-### 6. Documentation [TODO]
+### 7. Documentation [TODO]
 - [ ] Usage examples
 - [ ] Configuration guide
 - [ ] Comparison with pyramid_tm
 - [ ] API documentation
+- [ ] CLI command documentation
 
 ## Key Design Decisions
 1. Use Temporal interceptors for automatic transaction management
