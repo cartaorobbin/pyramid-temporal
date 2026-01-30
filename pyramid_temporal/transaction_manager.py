@@ -10,30 +10,31 @@ logger = logging.getLogger(__name__)
 
 def is_transaction_active(tm: Optional[object] = None) -> bool:
     """Check if there is an active transaction.
-    
+
     Args:
         tm: Optional transaction manager. If None, uses transaction.manager
-        
+
     Returns:
         bool: True if there is an active transaction, False otherwise
     """
     transaction_manager = tm or transaction.manager
     try:
         current = transaction_manager.get()
-        return current is not None and current.status != 'NoTransaction'
     except Exception:
         return False
+    else:
+        return current is not None and current.status != "NoTransaction"
 
 
 def safe_commit(tm: Optional[object] = None) -> bool:
     """Safely commit a transaction, handling doomed transactions.
-    
+
     Args:
         tm: Optional transaction manager. If None, uses transaction.manager
-        
+
     Returns:
         bool: True if committed successfully, False if skipped (doomed)
-        
+
     Raises:
         Exception: If commit fails for reasons other than doomed transaction
     """
@@ -41,15 +42,13 @@ def safe_commit(tm: Optional[object] = None) -> bool:
     try:
         logger.debug("Committing transaction")
         transaction_manager.commit()
-        logger.info("Transaction committed successfully")
-        return True
     except Exception as e:
         error_msg = str(e)
         # Check if this is a doomed transaction error
         if "doomed" in error_msg.lower():
             logger.debug("Transaction is doomed, skipping commit (will be rolled back by test framework)")
             return False
-        
+
         logger.error("Failed to commit transaction: %s", e)
         # Try to abort the transaction if commit fails
         try:
@@ -58,11 +57,14 @@ def safe_commit(tm: Optional[object] = None) -> bool:
         except Exception as abort_error:
             logger.error("Failed to abort transaction after commit failure: %s", abort_error)
         raise
+    else:
+        logger.info("Transaction committed successfully")
+        return True
 
 
 def safe_abort(tm: Optional[object] = None) -> None:
     """Safely abort a transaction without raising exceptions.
-    
+
     Args:
         tm: Optional transaction manager. If None, uses transaction.manager
     """

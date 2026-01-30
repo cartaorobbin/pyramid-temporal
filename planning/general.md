@@ -52,77 +52,32 @@ Create a bridge between Pyramid and Temporal that implements the Unit of Work pa
 - [x] Add comprehensive error handling and logging
 - [x] Document worker factory function signature and usage
 
-### 6. Activity Context & Dependency Injection [TODO]
+### 6. Activity Context & Dependency Injection [COMPLETED]
+- [x] Create `pyramid_temporal/context.py` with ActivityContext and ActivityRequest classes
+- [x] Create `pyramid_temporal/activity.py` with `@activity.defn` decorator
+- [x] Create `pyramid_temporal/worker.py` with custom Worker class
+- [x] Update interceptor to work with new context system
+- [x] Update exports in `__init__.py`
+- [x] Update example worker to use new API
 
-**Goal**: Provide clean dependency injection for activities to access Pyramid registry and request-like objects.
-
-**Desired API**:
+**New API**:
 ```python
 from pyramid_temporal import Worker, activity, ActivityContext
 
 @activity.defn
-async def enrich_user(context: ActivityContext, user_id: int) -> bool:
-    # Access database session via request-like object
+async def my_activity(context: ActivityContext, user_id: int) -> bool:
     session = context.request.dbsession
-    # Access Pyramid registry
-    setting = context.registry.settings['my.setting']
-    # Access transaction manager
-    context.request.tm.commit()
-    return True
+    user = session.query(User).get(user_id)
+    return user is not None
 
-# Worker handles context binding automatically
 worker = Worker(
     client,
     registry,  # Pyramid registry
     task_queue="my-queue",
-    activities=[enrich_user],
+    activities=[my_activity],
     workflows=[MyWorkflow],
 )
 ```
-
-**Components to implement**:
-
-#### 6.1 ActivityContext class
-- [ ] Create `pyramid_temporal/context.py` module
-- [ ] Implement `ActivityContext` class with:
-  - `registry` - Pyramid registry reference
-  - `request` - Request-like object (created per activity execution)
-- [ ] Implement `ActivityRequest` class with:
-  - `dbsession` - Database session (created per activity)
-  - `tm` - Transaction manager
-  - `registry` - Reference to Pyramid registry
-  - `settings` - Shortcut to `registry.settings`
-
-#### 6.2 Activity decorator
-- [ ] Create `pyramid_temporal/activity.py` module
-- [ ] Implement `@activity.defn` decorator that:
-  - Marks function as needing context injection
-  - Stores original function for later binding
-  - Supports `name` parameter like Temporal's decorator
-
-#### 6.3 Custom Worker class
-- [ ] Create `pyramid_temporal/worker.py` module
-- [ ] Implement `Worker` class that:
-  - Wraps `temporalio.worker.Worker`
-  - Takes Pyramid registry as required parameter
-  - Auto-binds pyramid-temporal activities to context
-  - Passes through plain Temporal activities unchanged
-  - Includes transaction interceptor automatically
-
-#### 6.4 Update interceptor
-- [ ] Modify interceptor to work with new context system
-- [ ] Create request/session per activity execution
-- [ ] Clean up resources after activity completes
-
-#### 6.5 Update exports
-- [ ] Export new classes from `__init__.py`
-- [ ] Maintain backward compatibility
-
-**Design decisions**:
-1. Session created fresh per activity (like Pyramid request)
-2. Support mixed activities (plain Temporal + pyramid-aware)
-3. Transaction management integrated into context
-4. Worker wrapper for clean API
 
 ### 7. Testing [TODO]
 - [ ] Unit tests for transaction manager
@@ -131,7 +86,9 @@ worker = Worker(
 - [ ] Test Pyramid integration
 - [ ] Test CLI command functionality
 - [ ] Tests for new ActivityContext and Worker
+- [ ] Tests for new ActivityContext and Worker
 
+### 8. Documentation [TODO]
 ### 8. Documentation [TODO]
 - [ ] Usage examples
 - [ ] Configuration guide

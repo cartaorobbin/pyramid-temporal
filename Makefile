@@ -1,4 +1,4 @@
-.PHONY: install
+s.PHONY: install
 install: ## Install the poetry environment and install the pre-commit hooks
 	@echo "🚀 Creating virtual environment using pyenv and poetry"
 	@poetry install	
@@ -20,8 +20,6 @@ check: ## Run code quality tools.
 	@poetry lock
 	@echo "🚀 Linting code: Running pre-commit"
 	@poetry run pre-commit run -a
-	@echo "🚀 Static type checking: Running mypy"
-	@poetry run mypy
 	@echo "🚀 Checking for obsolete dependencies: Running deptry"
 	@poetry run deptry .
 

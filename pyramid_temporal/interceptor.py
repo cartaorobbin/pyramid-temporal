@@ -1,54 +1,51 @@
 """Temporal activity interceptor for automatic transaction management."""
 
 import logging
-import threading
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from temporalio import activity
 from temporalio.worker import ActivityInboundInterceptor, Interceptor
 
-from .transaction_manager import is_transaction_active, safe_commit, safe_abort
+from .transaction_manager import is_transaction_active, safe_abort, safe_commit
+
+if TYPE_CHECKING:
+    from .context import ActivityContext
 
 logger = logging.getLogger(__name__)
 
 
 class TransactionalActivityInterceptor(ActivityInboundInterceptor):
     """Activity interceptor that provides automatic transaction management.
-    
+
     This interceptor hooks into the Temporal activity execution lifecycle
-    to automatically manage transactions using the configured transaction manager.
+    to automatically manage transactions and activity context.
     """
 
     def __init__(
         self,
         next_interceptor: ActivityInboundInterceptor,
-        transaction_manager: object,
-        db_session_factory: Any,
+        context: Optional["ActivityContext"] = None,
     ) -> None:
         """Initialize the interceptor.
 
         Args:
             next_interceptor: The next interceptor in the chain
-            transaction_manager: zope.transaction manager instance (required)
-            db_session_factory: Database session factory for creating sessions (required)
+            context: ActivityContext for creating request objects
         """
         super().__init__(next_interceptor)
-        self.transaction_manager = transaction_manager
-        self.db_session_factory = db_session_factory
+        self._context = context
 
-    async def execute_activity(self, input: Any) -> Any:
-        """Execute activity with automatic transaction management and session injection.
+    async def execute_activity(self, activity_input: Any) -> Any:  # noqa: C901
+        """Execute activity with automatic transaction management.
 
         This method wraps the activity execution with transaction management:
-        1. Creates a database session using the worker's session maker
+        1. Creates an ActivityRequest via the context (with db session)
         2. Begins a transaction before executing the activity
-        3. Makes the session available to the activity via worker interceptor attrs
-        4. Commits the transaction if the activity succeeds
-        5. Aborts the transaction if the activity fails
-        6. Closes the session
+        3. Commits the transaction if the activity succeeds
+        4. Aborts the transaction if the activity fails
+        5. Cleans up the request/session
 
         Args:
-            input: Activity input
+            activity_input: Activity input
 
         Returns:
             Activity result
@@ -56,79 +53,82 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         Raises:
             Exception: Any exception raised by the activity, after transaction rollback
         """
-        activity_info = getattr(input, 'info', None)
-        activity_name = getattr(activity_info, 'activity_type', 'unknown') if activity_info else 'unknown'
-        
+        activity_info = getattr(activity_input, "info", None)
+        activity_name = getattr(activity_info, "activity_type", "unknown") if activity_info else "unknown"
+
         logger.info("Starting activity '%s' with transaction management", activity_name)
-        
-        # Get database session from session factory
-        session = self.db_session_factory()
-        
-        # Store session in activity context for access by the activity
-        # We'll store it in a thread-local context
-        threading.current_thread().pyramid_temporal_session = session
-        
-        # Begin transaction if not already active
-        if not is_transaction_active(self.transaction_manager):
+
+        # Create request via context (includes db session)
+        request = None
+        tm = None
+
+        if self._context is not None:
             try:
-                self.transaction_manager.begin()
+                request = self._context.create_request()
+                tm = request.tm
+                logger.debug("Created ActivityRequest for activity '%s'", activity_name)
+            except Exception as e:
+                logger.error("Failed to create ActivityRequest for activity '%s': %s", activity_name, e)
+                raise
+
+        # Begin transaction if we have a transaction manager
+        if tm is not None and not is_transaction_active(tm):
+            try:
+                tm.begin()
                 logger.debug("Started new transaction for activity '%s'", activity_name)
             except Exception as e:
                 logger.error("Failed to start transaction for activity '%s': %s", activity_name, e)
-                session.close()
+                if self._context is not None:
+                    self._context.close_request()
                 raise
-        else:
-            logger.debug("Transaction already active, reusing existing transaction")
-        
+
         try:
             # Execute the activity
             logger.debug("Executing activity '%s'", activity_name)
-            result = await super().execute_activity(input)
-            
-            # Commit transaction on success
-            safe_commit(self.transaction_manager)
-            logger.info("Activity '%s' executed successfully, transaction committed", activity_name)
-            
-            return result
-            
+            result = await super().execute_activity(activity_input)
         except Exception as e:
             # Abort transaction on any exception
-            logger.warning("Activity '%s' failed with exception: %s, aborting transaction", activity_name, e)
-            safe_abort(self.transaction_manager)
+            if tm is not None:
+                logger.warning("Activity '%s' failed with exception: %s, aborting transaction", activity_name, e)
+                safe_abort(tm)
+            else:
+                logger.warning("Activity '%s' failed with exception: %s", activity_name, e)
             raise
-            
+        else:
+            # Commit transaction on success
+            if tm is not None:
+                safe_commit(tm)
+                logger.info("Activity '%s' executed successfully, transaction committed", activity_name)
+            else:
+                logger.info("Activity '%s' executed successfully (no transaction)", activity_name)
+            return result
         finally:
-            # Clean up thread-local session (but don't close it since we don't own it)
-            if hasattr(threading.current_thread(), 'pyramid_temporal_session'):
-                delattr(threading.current_thread(), 'pyramid_temporal_session')
+            # Clean up request/session
+            if self._context is not None:
+                self._context.close_request()
+                logger.debug("Cleaned up ActivityRequest for activity '%s'", activity_name)
 
 
 class PyramidTemporalInterceptor(Interceptor):
     """Main interceptor class for pyramid-temporal integration.
-    
+
     This is the main entry point for integrating pyramid-temporal
     transaction management with Temporal workers.
     """
 
     def __init__(
-        self, 
-        transaction_manager: Optional[object] = None,
-        db_session_factory: Optional[Any] = None
+        self,
+        context: Optional["ActivityContext"] = None,
     ) -> None:
         """Initialize the interceptor.
 
         Args:
-            transaction_manager: zope.transaction manager instance
-            db_session_factory: Database session factory for creating sessions
+            context: ActivityContext for request/session management
         """
-        self.transaction_manager = transaction_manager
-        self.db_session_factory = db_session_factory
-        logger.info("Initialized PyramidTemporalInterceptor with transaction manager: %s", 
-                   type(self.transaction_manager).__name__ if self.transaction_manager else "default")
+        self._context = context
+        logger.info("Initialized PyramidTemporalInterceptor with context: %s", "yes" if context else "no")
 
-    def intercept_activity(
-        self, next_interceptor: ActivityInboundInterceptor
-    ) -> ActivityInboundInterceptor:
+    def intercept_activity(self, next_interceptor: ActivityInboundInterceptor) -> ActivityInboundInterceptor:
         """Intercept activity execution to add transaction management.
 
         Args:
@@ -138,7 +138,6 @@ class PyramidTemporalInterceptor(Interceptor):
             Transactional activity interceptor
         """
         return TransactionalActivityInterceptor(
-            next_interceptor, 
-            self.transaction_manager, 
-            self.db_session_factory
+            next_interceptor,
+            context=self._context,
         )
