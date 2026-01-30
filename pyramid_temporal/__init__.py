@@ -42,13 +42,12 @@ if TYPE_CHECKING:
 __version__ = "0.0.1"
 
 # Main public API
+# Create an 'activity' module-like namespace for @activity.defn syntax
+from . import activity
 from .activity import PyramidActivity, defn, is_pyramid_activity
 from .context import ActivityContext, ActivityRequest
 from .interceptor import PyramidTemporalInterceptor
 from .worker import Worker
-
-# Create an 'activity' module-like namespace for @activity.defn syntax
-from . import activity
 
 __all__ = [
     # Main classes

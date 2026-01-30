@@ -32,20 +32,20 @@ def _import_worker_factory(worker_path: str) -> Callable:
     """
     try:
         module_path, function_name = worker_path.rsplit(".", 1)
-    except ValueError:
-        raise ValueError(f"Invalid worker path: '{worker_path}'. " "Expected format: 'module.path.function_name'")
+    except ValueError as e:
+        raise ValueError(f"Invalid worker path: '{worker_path}'. Expected format: 'module.path.function_name'") from e
 
     try:
         module = importlib.import_module(module_path)
         worker_factory = getattr(module, function_name)
     except ImportError as e:
-        raise ImportError(f"Cannot import module '{module_path}': {e}")
-    except AttributeError:
-        raise AttributeError(f"Function '{function_name}' not found in module '{module_path}'")
+        raise ImportError(f"Cannot import module '{module_path}': {e}") from e
+    except AttributeError as e:
+        raise AttributeError(f"Function '{function_name}' not found in module '{module_path}'") from e
 
     if not callable(worker_factory):
         raise TypeError(
-            f"'{worker_path}' is not callable. " "Worker factory must be a function that returns a Worker instance."
+            f"'{worker_path}' is not callable. Worker factory must be a function that returns a Worker instance."
         )
 
     return worker_factory
@@ -163,7 +163,7 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
         worker = worker_factory(registry)
 
         if not isinstance(worker, Worker):
-            raise TypeError(f"Worker factory must return a temporalio.worker.Worker instance, " f"got {type(worker)}")
+            raise TypeError(f"Worker factory must return a temporalio.worker.Worker instance, got {type(worker)}")
 
         # 4. Run worker
         logger.info("Step 4: Starting worker (this will run forever)")

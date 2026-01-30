@@ -34,7 +34,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         super().__init__(next_interceptor)
         self._context = context
 
-    async def execute_activity(self, input: Any) -> Any:
+    async def execute_activity(self, activity_input: Any) -> Any:  # noqa: C901
         """Execute activity with automatic transaction management.
 
         This method wraps the activity execution with transaction management:
@@ -45,7 +45,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         5. Cleans up the request/session
 
         Args:
-            input: Activity input
+            activity_input: Activity input
 
         Returns:
             Activity result
@@ -53,7 +53,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         Raises:
             Exception: Any exception raised by the activity, after transaction rollback
         """
-        activity_info = getattr(input, "info", None)
+        activity_info = getattr(activity_input, "info", None)
         activity_name = getattr(activity_info, "activity_type", "unknown") if activity_info else "unknown"
 
         logger.info("Starting activity '%s' with transaction management", activity_name)
@@ -85,17 +85,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         try:
             # Execute the activity
             logger.debug("Executing activity '%s'", activity_name)
-            result = await super().execute_activity(input)
-
-            # Commit transaction on success
-            if tm is not None:
-                safe_commit(tm)
-                logger.info("Activity '%s' executed successfully, transaction committed", activity_name)
-            else:
-                logger.info("Activity '%s' executed successfully (no transaction)", activity_name)
-
-            return result
-
+            result = await super().execute_activity(activity_input)
         except Exception as e:
             # Abort transaction on any exception
             if tm is not None:
@@ -104,7 +94,14 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
             else:
                 logger.warning("Activity '%s' failed with exception: %s", activity_name, e)
             raise
-
+        else:
+            # Commit transaction on success
+            if tm is not None:
+                safe_commit(tm)
+                logger.info("Activity '%s' executed successfully, transaction committed", activity_name)
+            else:
+                logger.info("Activity '%s' executed successfully (no transaction)", activity_name)
+            return result
         finally:
             # Clean up request/session
             if self._context is not None:

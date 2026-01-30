@@ -5,7 +5,7 @@ context binding for pyramid-temporal activities.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
 
 from temporalio.client import Client
 from temporalio.worker import Worker as TemporalWorker

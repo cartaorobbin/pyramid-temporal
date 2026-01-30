@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 
-from pyramid_temporal import Worker, activity, ActivityContext
+from pyramid_temporal import ActivityContext, Worker, activity
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,6 @@ async def database_activity(context: ActivityContext, user_id: int) -> dict:
     logger.info("Looking up user: %s", user_id)
 
     # Get database session from context
-    session = context.request.dbsession
 
     # Example query (uncomment when you have a User model):
     # user = session.query(User).filter_by(id=user_id).first()
@@ -129,9 +128,7 @@ def create_priority_worker(registry) -> Worker:
     temporal_client = registry.get("temporal_client")
 
     if not temporal_client:
-        raise RuntimeError(
-            "Temporal client not found in registry. " "Make sure pyramid-temporal is properly configured."
-        )
+        raise RuntimeError("Temporal client not found in registry. Make sure pyramid-temporal is properly configured.")
 
     worker = Worker(
         temporal_client,

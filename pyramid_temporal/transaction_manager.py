@@ -20,9 +20,10 @@ def is_transaction_active(tm: Optional[object] = None) -> bool:
     transaction_manager = tm or transaction.manager
     try:
         current = transaction_manager.get()
-        return current is not None and current.status != "NoTransaction"
     except Exception:
         return False
+    else:
+        return current is not None and current.status != "NoTransaction"
 
 
 def safe_commit(tm: Optional[object] = None) -> bool:
@@ -41,8 +42,6 @@ def safe_commit(tm: Optional[object] = None) -> bool:
     try:
         logger.debug("Committing transaction")
         transaction_manager.commit()
-        logger.info("Transaction committed successfully")
-        return True
     except Exception as e:
         error_msg = str(e)
         # Check if this is a doomed transaction error
@@ -58,6 +57,9 @@ def safe_commit(tm: Optional[object] = None) -> bool:
         except Exception as abort_error:
             logger.error("Failed to abort transaction after commit failure: %s", abort_error)
         raise
+    else:
+        logger.info("Transaction committed successfully")
+        return True
 
 
 def safe_abort(tm: Optional[object] = None) -> None:
