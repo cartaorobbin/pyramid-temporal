@@ -52,14 +52,42 @@ Create a bridge between Pyramid and Temporal that implements the Unit of Work pa
 - [x] Add comprehensive error handling and logging
 - [x] Document worker factory function signature and usage
 
-### 6. Testing [TODO]
+### 6. Activity Context & Dependency Injection [COMPLETED]
+- [x] Create `pyramid_temporal/context.py` with ActivityContext and ActivityRequest classes
+- [x] Create `pyramid_temporal/activity.py` with `@activity.defn` decorator
+- [x] Create `pyramid_temporal/worker.py` with custom Worker class
+- [x] Update interceptor to work with new context system
+- [x] Update exports in `__init__.py`
+- [x] Update example worker to use new API
+
+**New API**:
+```python
+from pyramid_temporal import Worker, activity, ActivityContext
+
+@activity.defn
+async def my_activity(context: ActivityContext, user_id: int) -> bool:
+    session = context.request.dbsession
+    user = session.query(User).get(user_id)
+    return user is not None
+
+worker = Worker(
+    client,
+    registry,  # Pyramid registry
+    task_queue="my-queue",
+    activities=[my_activity],
+    workflows=[MyWorkflow],
+)
+```
+
+### 7. Testing [TODO]
 - [ ] Unit tests for transaction manager
 - [ ] Integration tests with mock Temporal activities
 - [ ] Test transaction rollback scenarios
 - [ ] Test Pyramid integration
 - [ ] Test CLI command functionality
+- [ ] Tests for new ActivityContext and Worker
 
-### 7. Documentation [TODO]
+### 8. Documentation [TODO]
 - [ ] Usage examples
 - [ ] Configuration guide
 - [ ] Comparison with pyramid_tm
