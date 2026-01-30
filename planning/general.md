@@ -86,7 +86,9 @@ worker = Worker(
 - [ ] Test Pyramid integration
 - [ ] Test CLI command functionality
 - [ ] Tests for new ActivityContext and Worker
+- [ ] Tests for new ActivityContext and Worker
 
+### 8. Documentation [TODO]
 ### 8. Documentation [TODO]
 - [ ] Usage examples
 - [ ] Configuration guide
