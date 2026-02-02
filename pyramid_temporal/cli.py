@@ -14,6 +14,8 @@ import click
 from pyramid.paster import bootstrap, setup_logging
 from temporalio.worker import Worker
 
+from .environment import PyramidEnvironment
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,14 +53,14 @@ def _import_worker_factory(worker_path: str) -> Callable:
     return worker_factory
 
 
-def _bootstrap_pyramid(ini_file: str) -> dict:
+def _bootstrap_pyramid(ini_file: str) -> PyramidEnvironment:
     """Bootstrap Pyramid application from INI file.
 
     Args:
         ini_file: Path to the Pyramid INI configuration file (already validated by Click)
 
     Returns:
-        dict: Bootstrap environment with 'app', 'registry', 'request', 'root', 'closer'
+        PyramidEnvironment: Wrapped bootstrap environment
 
     Raises:
         Exception: If configuration fails
@@ -67,11 +69,12 @@ def _bootstrap_pyramid(ini_file: str) -> dict:
     setup_logging(ini_file)
 
     logger.info("Bootstrapping Pyramid application from INI file: %s", ini_file)
-    env = bootstrap(ini_file)
+    env_dict = bootstrap(ini_file)
+    env = PyramidEnvironment.from_bootstrap(env_dict)
 
     logger.info("Pyramid bootstrap complete")
-    logger.info("Registry: %s", env["registry"])
-    logger.info("Application: %s", env["app"])
+    logger.info("Registry: %s", env.registry)
+    logger.info("Application: %s", env.app)
 
     return env
 
@@ -114,7 +117,7 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
         worker_factory_path: Python import path to worker factory function
                             (e.g., 'myapp.workers.create_worker')
 
-    The worker factory function should accept a Pyramid registry as its
+    The worker factory function should accept a PyramidEnvironment as its
     only argument and return a configured temporalio.worker.Worker instance.
 
     Example:
@@ -122,21 +125,20 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
 
     Example worker factory function:
 
-        def create_worker(registry):
-            from temporalio.worker import Worker
-            from pyramid_temporal import PyramidTemporalInterceptor
+        def create_worker(env: PyramidEnvironment):
+            from pyramid_temporal import Worker
 
             # Get Temporal client from registry
-            client = registry.get('temporal_client')
+            client = env.registry.get('temporal_client')
             if not client:
                 raise RuntimeError("Temporal client not found in registry")
 
             return Worker(
                 client,
+                env,
                 task_queue="my-queue",
                 workflows=[MyWorkflow],
                 activities=[my_activity],
-                interceptors=[PyramidTemporalInterceptor()]
             )
     """
     # Set up basic logging if not already configured
@@ -152,7 +154,6 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
         # 1. Bootstrap Pyramid application
         logger.info("Step 1: Bootstrapping Pyramid application")
         env = _bootstrap_pyramid(ini_file)
-        registry = env["registry"]
 
         # 2. Import worker factory function
         logger.info("Step 2: Importing worker factory function")
@@ -160,7 +161,7 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
 
         # 3. Create worker using factory
         logger.info("Step 3: Creating Temporal worker")
-        worker = worker_factory(registry)
+        worker = worker_factory(env)
 
         if not isinstance(worker, Worker):
             raise TypeError(f"Worker factory must return a temporalio.worker.Worker instance, got {type(worker)}")
@@ -173,7 +174,7 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
         finally:
             # Clean up pyramid bootstrap environment
             logger.info("Cleaning up Pyramid environment")
-            env["closer"]()
+            env.close()
 
     except Exception as e:
         logger.error("Failed to start worker: %s", e)

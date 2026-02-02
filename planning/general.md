@@ -5,6 +5,135 @@ Create a bridge between Pyramid and Temporal that implements the Unit of Work pa
 
 ## Current Active Tasks
 
+### 9. PyramidEnvironment Refactoring [COMPLETED]
+
+**Goal**: Wrap the full `pyramid.paster.bootstrap` output in a dedicated `PyramidEnvironment` class to provide future extensibility and cleaner API.
+
+**Background**: Currently, only `registry` is passed from bootstrap to Worker. The bootstrap returns:
+- `app`: WSGI application
+- `registry`: Pyramid registry
+- `request`: Request object
+- `root`: Root object (traversal)
+- `closer`: Cleanup callable
+
+**Plan**:
+
+#### Step 1: Create `PyramidEnvironment` class in `pyramid_temporal/environment.py`
+```python
+class PyramidEnvironment:
+    """Wrapper for Pyramid bootstrap environment."""
+    
+    def __init__(
+        self,
+        registry: Registry,
+        app: Optional[Any] = None,
+        request: Optional[Any] = None,
+        root: Optional[Any] = None,
+        closer: Optional[Callable] = None,
+    ):
+        self._registry = registry
+        self._app = app
+        self._request = request
+        self._root = root
+        self._closer = closer
+    
+    @classmethod
+    def from_bootstrap(cls, env: dict) -> "PyramidEnvironment":
+        """Create from pyramid.paster.bootstrap output."""
+        return cls(
+            registry=env["registry"],
+            app=env.get("app"),
+            request=env.get("request"),
+            root=env.get("root"),
+            closer=env.get("closer"),
+        )
+    
+    @property
+    def registry(self) -> Registry:
+        """Get Pyramid registry."""
+        return self._registry
+    
+    @property
+    def app(self) -> Optional[Any]:
+        """Get WSGI application."""
+        return self._app
+    
+    @property
+    def request(self) -> Optional[Any]:
+        """Get base request object."""
+        return self._request
+    
+    @property
+    def root(self) -> Optional[Any]:
+        """Get root object (for traversal)."""
+        return self._root
+    
+    @property
+    def settings(self) -> dict:
+        """Shortcut to registry.settings."""
+        return self._registry.settings
+    
+    def close(self) -> None:
+        """Clean up resources."""
+        if self._closer:
+            self._closer()
+```
+
+#### Step 2: Update `Worker.__init__` signature
+- Accept `PyramidEnvironment` instead of `Registry` (no backward compatibility)
+
+```python
+def __init__(
+    self,
+    client: Client,
+    env: "PyramidEnvironment",
+    *,
+    task_queue: str,
+    ...
+):
+    self._env = env
+```
+
+#### Step 3: Update `ActivityContext`
+- Accept `PyramidEnvironment` instead of just `Registry`
+- Expose `env` property for future use
+
+#### Step 4: Update CLI
+- Use `PyramidEnvironment.from_bootstrap(env)`
+- Pass full environment to worker factory
+- Handle `close()` in cleanup
+
+#### Step 5: Update exports in `__init__.py`
+- Export `PyramidEnvironment`
+
+#### Step 6: Update tests
+
+**API after change**:
+```python
+from pyramid_temporal import Worker, activity, ActivityContext, PyramidEnvironment
+
+# Worker factory receives full environment
+def create_worker(env: PyramidEnvironment):
+    return Worker(
+        client,
+        env,  # Full environment
+        task_queue="my-queue",
+        activities=[my_activity],
+    )
+
+# Activities can access full environment in future
+@activity.defn
+async def my_activity(context: ActivityContext, user_id: int) -> bool:
+    # context.env.root available for traversal apps
+    # context.env.app available if needed
+    session = context.request.dbsession
+    return True
+```
+
+**Questions to resolve**:
+- [x] ~~Should we add deprecation warning when `Registry` is passed directly?~~ **No backward compatibility - only accept `PyramidEnvironment`**
+- [x] ~~Should `ActivityContext.env` be exposed immediately or wait for use case?~~ **Expose immediately**
+
 ### 1. Environment Setup [COMPLETED]
 - [x] Create tools-and-setup.mdc documentation in .cursor/rules/
 - [x] Create .envrc file for environment variables

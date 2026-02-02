@@ -5,12 +5,14 @@ using zope.transaction, similar to how pyramid_tm works for web requests.
 
 Main components:
 - Worker: Pyramid-aware Temporal Worker with automatic context binding
+- PyramidEnvironment: Wrapper for Pyramid bootstrap environment
 - activity: Decorator module for defining pyramid-temporal activities
 - ActivityContext: Context object providing Pyramid integration
 - ActivityRequest: Request-like object for activities
 
 Example:
-    from pyramid_temporal import Worker, activity, ActivityContext
+    from pyramid.paster import bootstrap
+    from pyramid_temporal import Worker, activity, ActivityContext, PyramidEnvironment
 
     @activity.defn
     async def enrich_user(context: ActivityContext, user_id: int) -> bool:
@@ -20,9 +22,10 @@ Example:
         return True
 
     # In worker setup:
+    env = PyramidEnvironment.from_bootstrap(bootstrap('development.ini'))
     worker = Worker(
         client,
-        registry,
+        env,
         task_queue="my-queue",
         activities=[enrich_user],
         workflows=[MyWorkflow],
@@ -46,12 +49,14 @@ __version__ = "0.0.1"
 from . import activity
 from .activity import PyramidActivity, defn, is_pyramid_activity
 from .context import ActivityContext, ActivityRequest
+from .environment import PyramidEnvironment
 from .interceptor import PyramidTemporalInterceptor
 from .worker import Worker
 
 __all__ = [
     # Main classes
     "Worker",
+    "PyramidEnvironment",
     "ActivityContext",
     "ActivityRequest",
     "PyramidTemporalInterceptor",

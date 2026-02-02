@@ -17,6 +17,7 @@ This library implements the Unit of Work pattern for Temporal activities, automa
 
 - **Automatic Transaction Management**: Activities automatically get transaction begin/commit/abort
 - **Pyramid Integration**: Full access to Pyramid registry, settings, and utilities in activities
+- **PyramidEnvironment**: Clean wrapper for bootstrap environment with access to app, registry, root
 - **Dependency Injection**: Clean `ActivityContext` provides request-like access to database sessions
 - **Unit of Work Pattern**: Each activity runs in its own transactional scope with fresh DB session
 - **Clean Activity Code**: No manual transaction handling or context setup needed
@@ -35,7 +36,7 @@ pip install pyramid-temporal
 ```python
 from temporalio import workflow
 from temporalio.client import Client
-from pyramid_temporal import Worker, activity, ActivityContext
+from pyramid_temporal import Worker, activity, ActivityContext, PyramidEnvironment
 
 # Define activities with automatic context injection
 @activity.defn
@@ -47,6 +48,7 @@ async def enrich_user(context: ActivityContext, user_id: int) -> bool:
     - context.request.tm: Transaction manager
     - context.request.settings: Application settings
     - context.registry: Full Pyramid registry access
+    - context.env: Full PyramidEnvironment (app, root, etc.)
     """
     # Access database session - transactions are automatic!
     session = context.request.dbsession
@@ -86,16 +88,20 @@ class UserOnboardingWorkflow:
 ### Worker Setup
 
 ```python
-from pyramid_temporal import Worker
+from pyramid_temporal import Worker, PyramidEnvironment
 
-def create_worker(registry):
-    """Create worker with Pyramid integration."""
-    client = registry.get('temporal_client')
+def create_worker(env: PyramidEnvironment):
+    """Create worker with Pyramid integration.
+    
+    Args:
+        env: PyramidEnvironment from bootstrap (provided by CLI)
+    """
+    client = env.registry.get('temporal_client')
     
     # Worker automatically binds activities to context
     worker = Worker(
         client,
-        registry,  # Pyramid registry for context access
+        env,  # Full Pyramid environment
         task_queue="my-queue",
         activities=[enrich_user, send_notification],
         workflows=[UserOnboardingWorkflow],
@@ -132,11 +138,12 @@ ptemporal-worker development.ini myapp.workers.create_worker
 
 pyramid-temporal uses Temporal's interceptor mechanism combined with a custom Worker to provide seamless Pyramid integration:
 
-1. **Activity Starts** → Fresh database session created, transaction begins
-2. **Context Injected** → `ActivityContext` provides access to registry, session, settings
-3. **Activity Succeeds** → Transaction commits automatically  
-4. **Activity Fails** → Transaction aborts automatically
-5. **Cleanup** → Database session closed
+1. **Bootstrap** → `PyramidEnvironment` wraps the full Pyramid bootstrap (app, registry, root)
+2. **Activity Starts** → Fresh database session created, transaction begins
+3. **Context Injected** → `ActivityContext` provides access to environment, registry, session
+4. **Activity Succeeds** → Transaction commits automatically  
+5. **Activity Fails** → Transaction aborts automatically
+6. **Cleanup** → Database session closed, environment available for next activity
 
 This mirrors how `pyramid_tm` manages transactions for web requests, but applied to Temporal activities.
 
@@ -153,14 +160,37 @@ async def my_activity(context: ActivityContext, arg1: str, arg2: int) -> bool:
     # ...
 ```
 
+### `PyramidEnvironment`
+
+Wrapper for the Pyramid bootstrap environment:
+
+```python
+from pyramid.paster import bootstrap
+from pyramid_temporal import PyramidEnvironment
+
+# Create from bootstrap output
+env = PyramidEnvironment.from_bootstrap(bootstrap('development.ini'))
+
+# Access components
+env.registry   # Pyramid registry
+env.app        # WSGI application
+env.request    # Base request object
+env.root       # Root object (for traversal)
+env.settings   # Shortcut to registry.settings
+
+# Clean up when done
+env.close()
+```
+
 ### `ActivityContext`
 
 Context object passed to activities:
 
-- `context.registry` - Pyramid registry
+- `context.env` - Full `PyramidEnvironment`
+- `context.registry` - Pyramid registry (shortcut to `env.registry`)
+- `context.settings` - Application settings (shortcut to `env.settings`)
 - `context.request.dbsession` - SQLAlchemy session (fresh per activity)
 - `context.request.tm` - Transaction manager
-- `context.request.settings` - Application settings (shortcut to `registry.settings`)
 
 ### `Worker`
 
@@ -169,7 +199,7 @@ Pyramid-aware Temporal worker:
 ```python
 worker = Worker(
     client,           # Temporal client
-    registry,         # Pyramid registry (required)
+    env,              # PyramidEnvironment (required)
     task_queue="...", # Task queue name
     activities=[...], # List of activities
     workflows=[...],  # List of workflows

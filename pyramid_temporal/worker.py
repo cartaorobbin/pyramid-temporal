@@ -12,10 +12,10 @@ from temporalio.worker import Worker as TemporalWorker
 
 from .activity import PyramidActivity, is_pyramid_activity
 from .context import ActivityContext
+from .environment import PyramidEnvironment
 from .interceptor import PyramidTemporalInterceptor
 
 if TYPE_CHECKING:
-    from pyramid.registry import Registry
     from sqlalchemy.orm import Session
     from temporalio.worker import Interceptor
 
@@ -30,7 +30,8 @@ class Worker:
     transaction management via the PyramidTemporalInterceptor.
 
     Example:
-        from pyramid_temporal import Worker, activity
+        from pyramid.paster import bootstrap
+        from pyramid_temporal import Worker, activity, PyramidEnvironment
 
         @activity.defn
         async def my_activity(context: ActivityContext, user_id: int) -> bool:
@@ -38,9 +39,12 @@ class Worker:
             # ... do work ...
             return True
 
+        # Create environment from bootstrap
+        env = PyramidEnvironment.from_bootstrap(bootstrap('development.ini'))
+
         worker = Worker(
             client,
-            registry,
+            env,
             task_queue="my-queue",
             activities=[my_activity],
             workflows=[MyWorkflow],
@@ -53,7 +57,7 @@ class Worker:
     def __init__(
         self,
         client: Client,
-        registry: "Registry",
+        env: PyramidEnvironment,
         *,
         task_queue: str,
         activities: Sequence[Any] = (),
@@ -66,7 +70,7 @@ class Worker:
 
         Args:
             client: Temporal client instance
-            registry: Pyramid registry instance (required for context access)
+            env: PyramidEnvironment instance (from bootstrap)
             task_queue: Name of the task queue to poll
             activities: List of activities (both pyramid-temporal and plain Temporal)
             workflows: List of workflow classes
@@ -77,15 +81,15 @@ class Worker:
             **kwargs: Additional arguments passed to Temporal Worker
         """
         self._client = client
-        self._registry = registry
+        self._env = env
         self._task_queue = task_queue
-        self._dbsession_factory = dbsession_factory or registry.get("dbsession_factory")
+        self._dbsession_factory = dbsession_factory or env.registry.get("dbsession_factory")
         self._workflows = workflows
         self._extra_kwargs = kwargs
 
         # Create the activity context
         self._context = ActivityContext(
-            registry=registry,
+            env=env,
             dbsession_factory=self._dbsession_factory,
         )
 
@@ -159,6 +163,11 @@ class Worker:
             interceptors=self._interceptors,
             **self._extra_kwargs,
         )
+
+    @property
+    def env(self) -> PyramidEnvironment:
+        """Get the Pyramid environment."""
+        return self._env
 
     @property
     def context(self) -> ActivityContext:
