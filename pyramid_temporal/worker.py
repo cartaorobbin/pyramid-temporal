@@ -5,7 +5,7 @@ context binding for pyramid-temporal activities.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from temporalio.client import Client
 from temporalio.worker import Worker as TemporalWorker
@@ -16,7 +16,6 @@ from .environment import PyramidEnvironment
 from .interceptor import PyramidTemporalInterceptor
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
     from temporalio.worker import Interceptor
 
 logger = logging.getLogger(__name__)
@@ -62,7 +61,6 @@ class Worker:
         task_queue: str,
         activities: Sequence[Any] = (),
         workflows: Sequence[type] = (),
-        dbsession_factory: Optional[Callable[[], "Session"]] = None,
         interceptors: Sequence["Interceptor"] = (),
         **kwargs: Any,
     ) -> None:
@@ -74,8 +72,6 @@ class Worker:
             task_queue: Name of the task queue to poll
             activities: List of activities (both pyramid-temporal and plain Temporal)
             workflows: List of workflow classes
-            dbsession_factory: Optional database session factory. If not provided,
-                              will try to get 'dbsession_factory' from registry.
             interceptors: Additional interceptors to include (pyramid-temporal
                          interceptor is automatically added)
             **kwargs: Additional arguments passed to Temporal Worker
@@ -83,15 +79,11 @@ class Worker:
         self._client = client
         self._env = env
         self._task_queue = task_queue
-        self._dbsession_factory = dbsession_factory or env.registry.get("dbsession_factory")
         self._workflows = workflows
         self._extra_kwargs = kwargs
 
         # Create the activity context
-        self._context = ActivityContext(
-            env=env,
-            dbsession_factory=self._dbsession_factory,
-        )
+        self._context = ActivityContext(env=env)
 
         # Bind activities and separate pyramid vs plain
         self._bound_activities = self._bind_activities(activities)

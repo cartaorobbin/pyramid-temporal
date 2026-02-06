@@ -6,20 +6,20 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/tomas_correa/pyramid-temporal)](https://img.shields.io/github/commit-activity/m/tomas_correa/pyramid-temporal)
 [![License](https://img.shields.io/github/license/tomas_correa/pyramid-temporal)](https://img.shields.io/github/license/tomas_correa/pyramid-temporal)
 
-**pyramid-temporal** provides automatic transaction management for Temporal activities using `zope.transaction`, similar to how `pyramid_tm` works for web requests.
+**pyramid-temporal** provides automatic transaction management for Temporal activities using `pyramid_tm`, exactly how it works for web requests.
 
-This library implements the Unit of Work pattern for Temporal activities, automatically handling transaction lifecycle (begin/commit/abort) and providing access to the Pyramid registry and request-like objects within activities.
+This library gives Temporal activities **real Pyramid requests** (via `pyramid.scripting.prepare`), so all your existing request methods work automatically - `request.dbsession`, `request.tm`, and any other methods configured via `add_request_method`.
 
 - **Github repository**: <https://github.com/tomas_correa/pyramid-temporal/>
 - **Documentation** <https://tomas_correa.github.io/pyramid-temporal/>
 
 ## Features
 
-- **Automatic Transaction Management**: Activities automatically get transaction begin/commit/abort
-- **Pyramid Integration**: Full access to Pyramid registry, settings, and utilities in activities
+- **Real Pyramid Requests**: Activities get actual `pyramid.request.Request` objects, not mocks
+- **Automatic Transaction Management**: Uses `pyramid_tm` - same as web requests
+- **Full Pyramid Integration**: All `add_request_method` configurations work automatically
 - **PyramidEnvironment**: Clean wrapper for bootstrap environment with access to app, registry, root
-- **Dependency Injection**: Clean `ActivityContext` provides request-like access to database sessions
-- **Unit of Work Pattern**: Each activity runs in its own transactional scope with fresh DB session
+- **Unit of Work Pattern**: Each activity runs in its own transactional scope with fresh request
 - **Clean Activity Code**: No manual transaction handling or context setup needed
 - **Custom Worker**: `pyramid_temporal.Worker` handles context binding automatically
 
@@ -43,12 +43,8 @@ from pyramid_temporal import Worker, activity, ActivityContext, PyramidEnvironme
 async def enrich_user(context: ActivityContext, user_id: int) -> bool:
     """Activity with full Pyramid integration.
     
-    The context provides:
-    - context.request.dbsession: Database session (fresh per activity)
-    - context.request.tm: Transaction manager
-    - context.request.settings: Application settings
-    - context.registry: Full Pyramid registry access
-    - context.env: Full PyramidEnvironment (app, root, etc.)
+    context.request is a REAL Pyramid Request object with all
+    configured request methods (dbsession, tm, etc.) available.
     """
     # Access database session - transactions are automatic!
     session = context.request.dbsession
@@ -56,15 +52,15 @@ async def enrich_user(context: ActivityContext, user_id: int) -> bool:
     
     if user:
         user.enriched = True
-        # No need to commit - happens automatically on success
+        # No need to commit - pyramid_tm handles it on success
         return True
     return False
 
 @activity.defn
 async def send_notification(context: ActivityContext, user_id: int, message: str) -> bool:
     """Another activity using context."""
-    # Access settings
-    api_key = context.request.settings.get('notification.api_key')
+    # Access settings from the real request
+    api_key = context.request.registry.settings.get('notification.api_key')
     # ... send notification
     return True
 
@@ -111,20 +107,29 @@ def create_worker(env: PyramidEnvironment):
 
 ### Pyramid Configuration
 
-In your Pyramid application:
+In your Pyramid application, configure as you normally would for web requests:
 
 ```python
 from pyramid.config import Configurator
 
 def main(global_config, **settings):
     config = Configurator(settings=settings)
-    config.include('pyramid_temporal')  # Registers pyramid-temporal
     
-    # Register your database session factory
-    config.registry['dbsession_factory'] = get_session_factory(engine)
+    # Standard Pyramid/pyramid_tm setup
+    config.include('pyramid_tm')
+    config.include('pyramid_temporal')
+    
+    # Configure request.dbsession as you normally would
+    config.add_request_method(
+        lambda r: get_tm_session(session_factory, r.tm),
+        'dbsession',
+        reify=True
+    )
     
     return config.make_wsgi_app()
 ```
+
+The same configuration works for both web requests and Temporal activities!
 
 ### CLI Usage
 
@@ -136,16 +141,16 @@ ptemporal-worker development.ini myapp.workers.create_worker
 
 ## How It Works
 
-pyramid-temporal uses Temporal's interceptor mechanism combined with a custom Worker to provide seamless Pyramid integration:
+pyramid-temporal uses `pyramid.scripting.prepare` to give activities real Pyramid requests:
 
 1. **Bootstrap** → `PyramidEnvironment` wraps the full Pyramid bootstrap (app, registry, root)
-2. **Activity Starts** → Fresh database session created, transaction begins
-3. **Context Injected** → `ActivityContext` provides access to environment, registry, session
-4. **Activity Succeeds** → Transaction commits automatically  
+2. **Activity Starts** → Real Pyramid Request created via `pyramid.scripting.prepare`
+3. **Context Injected** → `ActivityContext` provides access to real request with all methods
+4. **Activity Succeeds** → Transaction commits automatically (via `pyramid_tm`)
 5. **Activity Fails** → Transaction aborts automatically
-6. **Cleanup** → Database session closed, environment available for next activity
+6. **Cleanup** → Request context closed via `prepare()`'s closer
 
-This mirrors how `pyramid_tm` manages transactions for web requests, but applied to Temporal activities.
+This is exactly how `pyramid_tm` works for web requests - your activities use the same patterns.
 
 ## API Reference
 
@@ -189,8 +194,10 @@ Context object passed to activities:
 - `context.env` - Full `PyramidEnvironment`
 - `context.registry` - Pyramid registry (shortcut to `env.registry`)
 - `context.settings` - Application settings (shortcut to `env.settings`)
-- `context.request.dbsession` - SQLAlchemy session (fresh per activity)
-- `context.request.tm` - Transaction manager
+- `context.request` - **Real Pyramid Request** with all configured methods:
+  - `request.dbsession` - if configured via `add_request_method`
+  - `request.tm` - if `pyramid_tm` is included
+  - Any other methods you've configured
 
 ### `Worker`
 

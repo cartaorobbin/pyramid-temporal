@@ -113,6 +113,14 @@ extend_exclude = [
     "example.py",
     "examples",
 ]
+# These are peer dependencies - users need them but pyramid-temporal
+# doesn't directly import them (it uses real Pyramid requests which
+# the user configures with dbsession, tm, etc.)
+ignore_obsolete = [
+    "sqlalchemy",
+    "zope-interface",
+    "zope-sqlalchemy",
+]
 
 [tool.coverage.report]
 skip_empty = true

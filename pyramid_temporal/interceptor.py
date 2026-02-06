@@ -18,6 +18,9 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
 
     This interceptor hooks into the Temporal activity execution lifecycle
     to automatically manage transactions and activity context.
+
+    It creates a real Pyramid request for each activity via pyramid.scripting.prepare,
+    and manages transaction lifecycle using the request's transaction manager (request.tm).
     """
 
     def __init__(
@@ -38,11 +41,11 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         """Execute activity with automatic transaction management.
 
         This method wraps the activity execution with transaction management:
-        1. Creates an ActivityRequest via the context (with db session)
-        2. Begins a transaction before executing the activity
+        1. Creates a real Pyramid Request via the context (using pyramid.scripting.prepare)
+        2. Begins a transaction before executing the activity (using request.tm)
         3. Commits the transaction if the activity succeeds
         4. Aborts the transaction if the activity fails
-        5. Cleans up the request/session
+        5. Cleans up the request context
 
         Args:
             activity_input: Activity input
@@ -58,17 +61,18 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
 
         logger.info("Starting activity '%s' with transaction management", activity_name)
 
-        # Create request via context (includes db session)
+        # Create request via context (real Pyramid request)
         request = None
         tm = None
 
         if self._context is not None:
             try:
                 request = self._context.create_request()
-                tm = request.tm
-                logger.debug("Created ActivityRequest for activity '%s'", activity_name)
+                # Get transaction manager from request (if pyramid_tm is configured)
+                tm = getattr(request, "tm", None)
+                logger.debug("Created Pyramid Request for activity '%s'", activity_name)
             except Exception as e:
-                logger.error("Failed to create ActivityRequest for activity '%s': %s", activity_name, e)
+                logger.error("Failed to create Pyramid Request for activity '%s': %s", activity_name, e)
                 raise
 
         # Begin transaction if we have a transaction manager
@@ -103,10 +107,10 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
                 logger.info("Activity '%s' executed successfully (no transaction)", activity_name)
             return result
         finally:
-            # Clean up request/session
+            # Clean up request context
             if self._context is not None:
                 self._context.close_request()
-                logger.debug("Cleaned up ActivityRequest for activity '%s'", activity_name)
+                logger.debug("Cleaned up Pyramid Request for activity '%s'", activity_name)
 
 
 class PyramidTemporalInterceptor(Interceptor):

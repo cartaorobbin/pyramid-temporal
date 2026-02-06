@@ -1,71 +1,21 @@
 """Activity context for Pyramid integration.
 
 This module provides context objects that give Temporal activities
-access to Pyramid registry and request-like functionality.
+access to real Pyramid requests via pyramid.scripting.prepare.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Optional
 
-import transaction
-import zope.sqlalchemy
+from pyramid.request import Request
+from pyramid.scripting import prepare
 
 from .environment import PyramidEnvironment
 
 if TYPE_CHECKING:
     from pyramid.registry import Registry
-    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
-
-
-class ActivityRequest:
-    """Request-like object for Temporal activities.
-
-    This provides a familiar interface similar to Pyramid's Request object,
-    giving activities access to database sessions, transaction management,
-    and registry settings.
-
-    A new ActivityRequest is created for each activity execution,
-    similar to how Pyramid creates a new Request for each HTTP request.
-    """
-
-    def __init__(
-        self,
-        registry: "Registry",
-        dbsession: "Session",
-        tm: Any,
-    ) -> None:
-        """Initialize the activity request.
-
-        Args:
-            registry: Pyramid registry instance
-            dbsession: SQLAlchemy session for this activity
-            tm: Transaction manager instance
-        """
-        self._registry = registry
-        self._dbsession = dbsession
-        self._tm = tm
-
-    @property
-    def registry(self) -> "Registry":
-        """Get the Pyramid registry."""
-        return self._registry
-
-    @property
-    def dbsession(self) -> "Session":
-        """Get the database session for this activity."""
-        return self._dbsession
-
-    @property
-    def tm(self) -> Any:
-        """Get the transaction manager."""
-        return self._tm
-
-    @property
-    def settings(self) -> dict:
-        """Get application settings (shortcut to registry.settings)."""
-        return self._registry.settings
 
 
 class ActivityContext:
@@ -73,35 +23,29 @@ class ActivityContext:
 
     This is the main context object passed to pyramid-temporal activities.
     It provides access to the Pyramid environment, registry, and creates
-    request-like objects for each activity execution.
+    real Pyramid requests for each activity execution using pyramid.scripting.prepare.
+
+    The request has all the same properties and methods as a web request,
+    including any configured via add_request_method (like dbsession, tm, etc.).
 
     Example:
         @activity.defn
         async def my_activity(context: ActivityContext, user_id: int) -> bool:
+            # Real Pyramid request with all configured methods
             session = context.request.dbsession
             user = session.query(User).get(user_id)
             return user is not None
     """
 
-    def __init__(
-        self,
-        env: PyramidEnvironment,
-        dbsession_factory: Optional[Callable[[], "Session"]] = None,
-        transaction_manager: Optional[Any] = None,
-    ) -> None:
+    def __init__(self, env: PyramidEnvironment) -> None:
         """Initialize the activity context.
 
         Args:
             env: PyramidEnvironment instance
-            dbsession_factory: Optional factory function to create database sessions.
-                              If not provided, will try to get from registry.
-            transaction_manager: Optional transaction manager. If not provided,
-                                uses the global transaction.manager.
         """
         self._env = env
-        self._dbsession_factory = dbsession_factory
-        self._transaction_manager = transaction_manager
-        self._request: Optional[ActivityRequest] = None
+        self._request: Optional[Request] = None
+        self._prepare_env: Optional[dict] = None
 
     @property
     def env(self) -> PyramidEnvironment:
@@ -119,8 +63,11 @@ class ActivityContext:
         return self._env.registry.settings
 
     @property
-    def request(self) -> ActivityRequest:
+    def request(self) -> Request:
         """Get the current activity request.
+
+        This is a real Pyramid Request object with all configured
+        request methods (dbsession, tm, etc.) available.
 
         Note: This should only be accessed during activity execution,
         after create_request() has been called by the interceptor.
@@ -135,55 +82,43 @@ class ActivityContext:
             )
         return self._request
 
-    def create_request(self) -> ActivityRequest:
-        """Create a new ActivityRequest for an activity execution.
+    def create_request(self) -> Request:
+        """Create a new Pyramid Request for an activity execution.
 
         This is called by the interceptor at the start of each activity.
-        It creates a fresh database session and transaction for the activity.
+        It uses pyramid.scripting.prepare to create a real Pyramid request
+        with all configured request methods and proper threadlocal setup.
 
         Returns:
-            A new ActivityRequest instance
+            A real Pyramid Request instance
         """
-        # Get or create transaction manager
-        tm = self._transaction_manager or transaction.TransactionManager(explicit=True)
+        # Use pyramid.scripting.prepare for a real Pyramid request
+        # This sets up threadlocals, applies request extensions, etc.
+        self._prepare_env = prepare(registry=self._env.registry)
+        self._request = self._prepare_env["request"]
 
-        # Get session factory
-        session_factory = self._dbsession_factory
-        if session_factory is None:
-            session_factory = self._env.registry.get("dbsession_factory")
-
-        if session_factory is None:
-            raise RuntimeError(
-                "No database session factory configured. "
-                "Either pass dbsession_factory to ActivityContext or "
-                "register 'dbsession_factory' in the Pyramid registry."
-            )
-
-        # Create session and register with transaction manager
-        dbsession = session_factory()
-        zope.sqlalchemy.register(dbsession, transaction_manager=tm)
-
-        # Create and store the request
-        self._request = ActivityRequest(
-            registry=self._env.registry,
-            dbsession=dbsession,
-            tm=tm,
+        logger.debug(
+            "Created Pyramid Request for activity (request id: %s)",
+            id(self._request),
         )
-
-        logger.debug("Created ActivityRequest with session id: %s", id(dbsession))
         return self._request
 
     def close_request(self) -> None:
         """Close the current activity request and clean up resources.
 
         This is called by the interceptor after activity execution completes.
+        It calls the closer from pyramid.scripting.prepare to properly
+        clean up the request context and threadlocals.
         """
-        if self._request is not None:
+        if self._prepare_env is not None:
             try:
-                # Close the database session
-                self._request.dbsession.close()
-                logger.debug("Closed ActivityRequest session")
+                # Call the closer from prepare() to clean up
+                closer = self._prepare_env.get("closer")
+                if closer is not None:
+                    closer()
+                logger.debug("Closed Pyramid Request context")
             except Exception as e:
-                logger.warning("Error closing ActivityRequest session: %s", e)
+                logger.warning("Error closing Pyramid Request context: %s", e)
             finally:
+                self._prepare_env = None
                 self._request = None

@@ -1,14 +1,17 @@
 """Pyramid-Temporal integration library.
 
 This package provides automatic transaction management for Temporal activities
-using zope.transaction, similar to how pyramid_tm works for web requests.
+using pyramid_tm, similar to how it works for web requests.
 
 Main components:
 - Worker: Pyramid-aware Temporal Worker with automatic context binding
 - PyramidEnvironment: Wrapper for Pyramid bootstrap environment
 - activity: Decorator module for defining pyramid-temporal activities
-- ActivityContext: Context object providing Pyramid integration
-- ActivityRequest: Request-like object for activities
+- ActivityContext: Context object providing real Pyramid requests to activities
+
+Activities receive real Pyramid Request objects (via pyramid.scripting.prepare),
+so all request methods configured via add_request_method work automatically
+(dbsession, tm, etc.).
 
 Example:
     from pyramid.paster import bootstrap
@@ -16,6 +19,7 @@ Example:
 
     @activity.defn
     async def enrich_user(context: ActivityContext, user_id: int) -> bool:
+        # Real Pyramid request with all configured methods
         session = context.request.dbsession
         user = session.query(User).get(user_id)
         user.enriched = True
@@ -48,7 +52,7 @@ __version__ = "0.0.1"
 # Create an 'activity' module-like namespace for @activity.defn syntax
 from . import activity
 from .activity import PyramidActivity, defn, is_pyramid_activity
-from .context import ActivityContext, ActivityRequest
+from .context import ActivityContext
 from .environment import PyramidEnvironment
 from .interceptor import PyramidTemporalInterceptor
 from .worker import Worker
@@ -58,7 +62,6 @@ __all__ = [
     "Worker",
     "PyramidEnvironment",
     "ActivityContext",
-    "ActivityRequest",
     "PyramidTemporalInterceptor",
     # Activity decorator
     "activity",

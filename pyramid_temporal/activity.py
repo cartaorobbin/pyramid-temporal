@@ -132,7 +132,6 @@ class PyramidActivity:
         """
         fn = self._fn
         name = self._name
-        no_thread_cancel_default = self._no_thread_cancel_default
 
         class BoundActivity:
             """Bound activity class for Temporal registration."""
@@ -140,10 +139,7 @@ class PyramidActivity:
             def __init__(self, ctx: ActivityContext) -> None:
                 self.context = ctx
 
-            @temporal_activity.defn(
-                name=name,
-                no_thread_cancel_default=no_thread_cancel_default,
-            )
+            @temporal_activity.defn(name=name)
             async def execute(self, *args: Any, **kwargs: Any) -> Any:
                 """Execute the activity with context injection."""
                 return await fn(self.context, *args, **kwargs)

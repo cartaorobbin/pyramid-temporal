@@ -5,6 +5,68 @@ Create a bridge between Pyramid and Temporal that implements the Unit of Work pa
 
 ## Current Active Tasks
 
+### 10. Use Real Pyramid Request in ActivityContext [COMPLETED]
+
+**Goal**: Replace custom `ActivityRequest` with real Pyramid `Request` using `pyramid.scripting.prepare`.
+
+**Background**: Currently we have a custom `ActivityRequest` class that mimics Pyramid's Request. Instead, we should use `pyramid.scripting.prepare()` which:
+- Creates a real Pyramid `Request` object
+- Pushes it onto the threadlocal stack
+- Applies request extensions (so `request.dbsession` works if configured)
+- Returns a `closer` for cleanup
+
+**Benefits**:
+- Real Pyramid request with all extensions and methods
+- Proper threadlocal setup (request available via `pyramid.threadlocal.get_current_request()`)
+- All request methods configured via `add_request_method` work automatically
+- Consistent with how Pyramid scripts work
+
+**Plan**:
+
+#### Step 1: Update `ActivityContext.create_request()`
+- Use `pyramid.scripting.prepare(registry=self._env.registry)`
+- Store the returned `closer` for cleanup
+- Return the real Pyramid `Request`
+
+#### Step 2: Update `ActivityContext.close_request()`
+- Call the `closer()` from prepare
+- Handle any additional cleanup
+
+#### Step 3: Remove `ActivityRequest` class
+- No longer needed since we use real Pyramid Request
+
+#### Step 4: Update type hints
+- `context.request` returns `pyramid.request.Request` instead of `ActivityRequest`
+
+#### Step 5: Update documentation and README
+
+**Code after change**:
+```python
+from pyramid.scripting import prepare
+
+class ActivityContext:
+    def create_request(self) -> Request:
+        # Use pyramid.scripting.prepare for real request
+        env = prepare(registry=self._env.registry)
+        self._prepare_env = env
+        self._request = env['request']
+        
+        # Transaction manager setup if needed
+        # ...
+        
+        return self._request
+    
+    def close_request(self) -> None:
+        if self._prepare_env is not None:
+            self._prepare_env['closer']()
+            self._prepare_env = None
+            self._request = None
+```
+
+**Note**: The `dbsession` must be configured on the request via `add_request_method` in the Pyramid app configuration, not by `ActivityContext`.
+
+---
+
 ### 9. PyramidEnvironment Refactoring [COMPLETED]
 
 **Goal**: Wrap the full `pyramid.paster.bootstrap` output in a dedicated `PyramidEnvironment` class to provide future extensibility and cleaner API.
