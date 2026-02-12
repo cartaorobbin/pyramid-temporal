@@ -52,6 +52,8 @@ jobs:
   deploy-docs:
     needs: publish-pypi
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Check out
         uses: actions/checkout@v4
