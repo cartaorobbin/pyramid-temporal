@@ -1,17 +1,17 @@
 # pyramid-temporal
 
-[![Release](https://img.shields.io/github/v/release/tomas_correa/pyramid-temporal)](https://img.shields.io/github/v/release/tomas_correa/pyramid-temporal)
-[![Build status](https://img.shields.io/github/actions/workflow/status/tomas_correa/pyramid-temporal/main.yml?branch=main)](https://github.com/tomas_correa/pyramid-temporal/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/tomas_correa/pyramid-temporal/branch/main/graph/badge.svg)](https://codecov.io/gh/tomas_correa/pyramid-temporal)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/tomas_correa/pyramid-temporal)](https://img.shields.io/github/commit-activity/m/tomas_correa/pyramid-temporal)
-[![License](https://img.shields.io/github/license/tomas_correa/pyramid-temporal)](https://img.shields.io/github/license/tomas_correa/pyramid-temporal)
+[![Release](https://img.shields.io/github/v/release/cartaorobbin/pyramid-temporal)](https://img.shields.io/github/v/release/cartaorobbin/pyramid-temporal)
+[![Build status](https://img.shields.io/github/actions/workflow/status/cartaorobbin/pyramid-temporal/main.yml?branch=main)](https://github.com/cartaorobbin/pyramid-temporal/actions/workflows/main.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/cartaorobbin/pyramid-temporal/branch/main/graph/badge.svg)](https://codecov.io/gh/cartaorobbin/pyramid-temporal)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/cartaorobbin/pyramid-temporal)](https://img.shields.io/github/commit-activity/m/cartaorobbin/pyramid-temporal)
+[![License](https://img.shields.io/github/license/cartaorobbin/pyramid-temporal)](https://img.shields.io/github/license/cartaorobbin/pyramid-temporal)
 
 **pyramid-temporal** provides automatic transaction management for Temporal activities using `pyramid_tm`, exactly how it works for web requests.
 
 This library gives Temporal activities **real Pyramid requests** (via `pyramid.scripting.prepare`), so all your existing request methods work automatically - `request.dbsession`, `request.tm`, and any other methods configured via `add_request_method`.
 
-- **Github repository**: <https://github.com/tomas_correa/pyramid-temporal/>
-- **Documentation** <https://tomas_correa.github.io/pyramid-temporal/>
+- **Github repository**: <https://github.com/cartaorobbin/pyramid-temporal/>
+- **Documentation** <https://cartaorobbin.github.io/pyramid-temporal/>
 
 ## Features
 

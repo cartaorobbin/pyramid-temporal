@@ -12,9 +12,10 @@ from typing import Callable
 
 import click
 from pyramid.paster import bootstrap, setup_logging
-from temporalio.worker import Worker
+from temporalio.worker import Worker as TemporalWorker
 
 from .environment import PyramidEnvironment
+from .worker import Worker as PyramidWorker
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def _bootstrap_pyramid(ini_file: str) -> PyramidEnvironment:
     return env
 
 
-async def _run_worker(worker: Worker) -> None:
+async def _run_worker(worker: TemporalWorker | PyramidWorker) -> None:
     """Run the Temporal worker forever.
 
     Args:
@@ -163,8 +164,8 @@ def ptemporal_worker(ini_file: str, worker_factory_path: str, log_level: str) ->
         logger.info("Step 3: Creating Temporal worker")
         worker = worker_factory(env)
 
-        if not isinstance(worker, Worker):
-            raise TypeError(f"Worker factory must return a temporalio.worker.Worker instance, got {type(worker)}")
+        if not isinstance(worker, (TemporalWorker, PyramidWorker)):
+            raise TypeError(f"Worker factory must return a Worker instance, got {type(worker)}")
 
         # 4. Run worker
         logger.info("Step 4: Starting worker (this will run forever)")

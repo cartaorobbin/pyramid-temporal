@@ -1,11 +1,11 @@
 site_name: pyramid-temporal
-repo_url: https://github.com/tomas_correa/pyramid-temporal
-site_url: https://tomas_correa.github.io/pyramid-temporal
+repo_url: https://github.com/cartaorobbin/pyramid-temporal
+site_url: https://cartaorobbin.github.io/pyramid-temporal
 site_description: This project bind the config and transaction from pyramid to temporal
 site_author: Robbin dev team
 edit_uri: edit/main/docs/
-repo_name: tomas_correa/pyramid-temporal
-copyright: Maintained by <a href="https://tomas_correa.com">Florian</a>.
+repo_name: cartaorobbin/pyramid-temporal
+copyright: Maintained by <a href="https://github.com/cartaorobbin">Tomas Correa</a>.
 
 nav:
   - Home: index.md
@@ -39,7 +39,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/tomas_correa/pyramid-temporal
+      link: https://github.com/cartaorobbin/pyramid-temporal
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/pyramid-temporal
 
