@@ -60,7 +60,7 @@ Current state:
 For a public repo:
 
 - The **CodeArtifact** workflow will only succeed where the repo has the required GitHub variables set (e.g. `AWS_ACCOUNT_ID`, `CODEARTIFACT_DOMAIN`, `CODEARTIFACT_OWNER`, `CODEARTIFACT_REPOSITORY_NAME`). In a fork or a repo without those vars, that job will fail; the rest of the workflow (e.g. docs) might still run if not gated on it.
-- **Decision:** **Option B – PyPI only.** Implemented: release workflow now publishes only to PyPI (CodeArtifact workflow removed). Set GitHub secret `PYPI_API_TOKEN` (PyPI API token) for the repo so the release job can publish.
+- **Decision:** **Option B – PyPI only.** Implemented: release workflow now publishes only to PyPI (CodeArtifact workflow removed). Uses organization secret `PYPI_TOKEN` for the release job.
 
 ---
 
