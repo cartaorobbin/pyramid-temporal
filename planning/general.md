@@ -5,6 +5,20 @@ Create a bridge between Pyramid and Temporal that implements the Unit of Work pa
 
 ## Current Active Tasks
 
+### 11. Use Pyramid Request Factory Directly in ActivityContext [COMPLETED]
+
+**Goal**: Replace `pyramid.scripting.prepare()` with direct use of Pyramid's public request factory, request extensions, and threadlocal context APIs.
+
+**Background**: `prepare()` computes root factory and root object, which is unnecessary for Temporal activities. Using the building blocks directly (`IRequestFactory`, `apply_request_extensions`, `RequestContext`) gives us a more explicit lifecycle and avoids unnecessary work.
+
+**Changes**:
+- `create_request()`: Uses `registry.queryUtility(IRequestFactory)` to get the request factory, creates a blank request, applies extensions, and sets up threadlocal context
+- `close_request()`: Processes finished callbacks and tears down threadlocal context directly
+- Replaced `_prepare_env` (opaque dict) with `_request_context` (explicit `RequestContext`)
+- Updated docstrings across `context.py`, `interceptor.py`, and `__init__.py`
+
+---
+
 ### 10. Use Real Pyramid Request in ActivityContext [COMPLETED]
 
 **Goal**: Replace custom `ActivityRequest` with real Pyramid `Request` using `pyramid.scripting.prepare`.

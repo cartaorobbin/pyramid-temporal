@@ -1,14 +1,16 @@
 """Activity context for Pyramid integration.
 
 This module provides context objects that give Temporal activities
-access to real Pyramid requests via pyramid.scripting.prepare.
+access to real Pyramid requests using Pyramid's request factory,
+request extensions, and threadlocal context APIs.
 """
 
 import logging
 from typing import TYPE_CHECKING, Optional
 
-from pyramid.request import Request
-from pyramid.scripting import prepare
+from pyramid.interfaces import IRequestFactory
+from pyramid.request import Request, apply_request_extensions
+from pyramid.threadlocal import RequestContext
 
 from .environment import PyramidEnvironment
 
@@ -23,7 +25,8 @@ class ActivityContext:
 
     This is the main context object passed to pyramid-temporal activities.
     It provides access to the Pyramid environment, registry, and creates
-    real Pyramid requests for each activity execution using pyramid.scripting.prepare.
+    real Pyramid requests for each activity execution using Pyramid's
+    request factory and request extension APIs.
 
     The request has all the same properties and methods as a web request,
     including any configured via add_request_method (like dbsession, tm, etc.).
@@ -45,7 +48,7 @@ class ActivityContext:
         """
         self._env = env
         self._request: Optional[Request] = None
-        self._prepare_env: Optional[dict] = None
+        self._request_context: Optional[RequestContext] = None
 
     @property
     def env(self) -> PyramidEnvironment:
@@ -86,19 +89,25 @@ class ActivityContext:
         """Create a new Pyramid Request for an activity execution.
 
         This is called by the interceptor at the start of each activity.
-        It uses pyramid.scripting.prepare to create a real Pyramid request
-        with all configured request methods and proper threadlocal setup.
+        It uses Pyramid's request factory to create a real request, applies
+        request extensions (add_request_method), and sets up threadlocals.
 
         Returns:
             A real Pyramid Request instance
         """
-        # Use pyramid.scripting.prepare for a real Pyramid request
-        # This sets up threadlocals, applies request extensions, etc.
-        self._prepare_env = prepare(registry=self._env.registry)
-        self._request = self._prepare_env["request"]
+        registry = self._env.registry
+        request_factory = registry.queryUtility(IRequestFactory, default=Request)
+        request = request_factory.blank("/")
+        request.registry = registry
 
         if self._env.request is not None:
-            self._request.environ.update(self._env.request.environ)
+            request.environ.update(self._env.request.environ)
+
+        self._request_context = RequestContext(request)
+        self._request_context.begin()
+        apply_request_extensions(request)
+
+        self._request = request
 
         logger.debug(
             "Created Pyramid Request for activity (request id: %s)",
@@ -110,18 +119,16 @@ class ActivityContext:
         """Close the current activity request and clean up resources.
 
         This is called by the interceptor after activity execution completes.
-        It calls the closer from pyramid.scripting.prepare to properly
-        clean up the request context and threadlocals.
+        It processes finished callbacks and tears down the threadlocal context.
         """
-        if self._prepare_env is not None:
+        if self._request is not None:
             try:
-                # Call the closer from prepare() to clean up
-                closer = self._prepare_env.get("closer")
-                if closer is not None:
-                    closer()
+                if self._request.finished_callbacks:
+                    self._request._process_finished_callbacks()
+                self._request_context.end()
                 logger.debug("Closed Pyramid Request context")
             except Exception as e:
                 logger.warning("Error closing Pyramid Request context: %s", e)
             finally:
-                self._prepare_env = None
+                self._request_context = None
                 self._request = None

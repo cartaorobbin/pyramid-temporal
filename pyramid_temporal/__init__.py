@@ -9,7 +9,7 @@ Main components:
 - activity: Decorator module for defining pyramid-temporal activities
 - ActivityContext: Context object providing real Pyramid requests to activities
 
-Activities receive real Pyramid Request objects (via pyramid.scripting.prepare),
+Activities receive real Pyramid Request objects (via Pyramid's request factory),
 so all request methods configured via add_request_method work automatically
 (dbsession, tm, etc.).
 

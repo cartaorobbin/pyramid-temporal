@@ -19,7 +19,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
     This interceptor hooks into the Temporal activity execution lifecycle
     to automatically manage transactions and activity context.
 
-    It creates a real Pyramid request for each activity via pyramid.scripting.prepare,
+    It creates a real Pyramid request for each activity via the activity context,
     and manages transaction lifecycle using the request's transaction manager (request.tm).
     """
 
@@ -41,7 +41,7 @@ class TransactionalActivityInterceptor(ActivityInboundInterceptor):
         """Execute activity with automatic transaction management.
 
         This method wraps the activity execution with transaction management:
-        1. Creates a real Pyramid Request via the context (using pyramid.scripting.prepare)
+        1. Creates a real Pyramid Request via the context (using Pyramid's request factory)
         2. Begins a transaction before executing the activity (using request.tm)
         3. Commits the transaction if the activity succeeds
         4. Aborts the transaction if the activity fails
