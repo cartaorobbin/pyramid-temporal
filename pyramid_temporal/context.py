@@ -97,6 +97,9 @@ class ActivityContext:
         self._prepare_env = prepare(registry=self._env.registry)
         self._request = self._prepare_env["request"]
 
+        if self._env.request is not None:
+            self._request.environ.update(self._env.request.environ)
+
         logger.debug(
             "Created Pyramid Request for activity (request id: %s)",
             id(self._request),
