@@ -83,6 +83,7 @@ def includeme(config: "Configurator") -> None:
 
     Configuration settings:
     - pyramid_temporal.temporal_host: Temporal server host (default: localhost:7233)
+    - pyramid_temporal.temporal_namespace: Temporal namespace (default: default)
     - pyramid_temporal.log_level: Logging level (default: INFO)
     - pyramid_temporal.auto_connect: Auto-connect to Temporal on startup (default: True)
 
@@ -115,6 +116,9 @@ def includeme(config: "Configurator") -> None:
     if "pyramid_temporal.temporal_host" not in settings:
         settings["pyramid_temporal.temporal_host"] = "localhost:7233"
 
+    if "pyramid_temporal.temporal_namespace" not in settings:
+        settings["pyramid_temporal.temporal_namespace"] = "default"
+
     if "pyramid_temporal.auto_connect" not in settings:
         settings["pyramid_temporal.auto_connect"] = "true"
 
@@ -141,13 +145,18 @@ def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
     """Setup Temporal client and register it in the registry."""
 
     temporal_host = settings.get("pyramid_temporal.temporal_host", "localhost:7233")
+    temporal_namespace = settings.get("pyramid_temporal.temporal_namespace", "default")
 
     try:
-        logger.info("Connecting to Temporal server at: %s", temporal_host)
+        logger.info(
+            "Connecting to Temporal server at: %s (namespace=%s)",
+            temporal_host,
+            temporal_namespace,
+        )
 
         # Create async function to connect to Temporal
         async def create_temporal_client():
-            return await Client.connect(temporal_host)
+            return await Client.connect(temporal_host, namespace=temporal_namespace)
 
         # Create new event loop if needed and connect
         try:
