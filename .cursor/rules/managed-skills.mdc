@@ -1,0 +1,29 @@
+---
+description: Managed skills are read-only — do not modify installed skill files
+alwaysApply: true
+---
+
+# Managed Skills Are Read-Only
+
+Skills inside directories that contain a `.managed-skill.md` file are externally managed. **Do not modify, rename, or delete any files** in these directories.
+
+If the user asks to change a managed skill, explain that it is managed from an external source and suggest:
+- Running "update my skills" to pull the latest version
+- Creating a project override rule (see below)
+
+## Project Overrides
+
+When applying instructions from a managed rule, check whether a corresponding `<rule-name>.overrides.mdc` file exists in the same rules directory. If it does, its instructions take precedence over any conflicting instructions in the managed rule. Non-conflicting instructions from the managed rule still apply.
+
+Override files are project-owned and are never modified by skill updates.
+
+Example `quality.overrides.mdc`:
+
+    ---
+    description: Project overrides for quality rule
+    alwaysApply: true
+    ---
+
+    # Quality Overrides
+
+    Type hints are optional for files under `migrations/` and `generated/`.

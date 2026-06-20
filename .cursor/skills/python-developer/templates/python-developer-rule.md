@@ -1,0 +1,64 @@
+---
+description: Python development conventions — core rules and companion skill routing
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python Developer Conventions
+
+Core conventions for Python development. For detailed guidance, examples, and anti-patterns, read the **python-best-practices** skill.
+
+## Toolchain
+
+- Package manager: **{toolchain}**
+- Run commands with: `{run_prefix}`
+- Formatter: black (line length 88) — `{run_prefix} black .`
+- Linter: ruff — `{run_prefix} ruff check .`
+- Tests: pytest — `{run_prefix} pytest`
+
+## Core Rules
+
+- **Imports**: always at module top level, never inside functions or methods. Use absolute imports. Order: stdlib → third-party → local (enforced by ruff isort).
+- **Type hints**: required on all public functions and class attributes.
+- **Error handling**: catch specific exceptions, never swallow silently, fail fast at boundaries.
+- **Naming**: `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_SNAKE_CASE` for constants. Use `is_`/`has_` prefixes for booleans.
+- **Functions**: single responsibility, short (~30 lines max), prefer returning values over mutating arguments.
+- **No mutable default arguments**: use `None` and initialize inside the function.
+
+## Forbidden
+
+- Never use pydantic (not in any form)
+- Never use FastAPI
+- Never put imports inside functions or methods
+- Never use bare `except:` — always catch specific exceptions
+- Never use `from module import *`
+
+## Project Type
+
+{project_type_section}
+
+## Style
+
+Follow the Zen of Python:
+- Simple over complex
+- Explicit over implicit
+- Flat over nested (use guard clauses)
+- Readable over clever
+
+## Companion Skills
+
+For deeper guidance, use these companion skills when available:
+
+- **python-best-practices** — comprehensive conventions, examples, and anti-patterns. Read this skill for any question about coding style or patterns.
+- **write-pytest** — guided workflow for writing tests. Use when adding or modifying tests.
+- **manage-dependencies** — adding, removing, or updating packages. Use instead of running package manager commands directly.
+
+## Overridable Defaults
+
+These settings can be overridden per project by creating `python-developer.overrides.mdc` in the same rules directory. Example overrides:
+
+- Change toolchain commands — e.g., `Use ruff format instead of black` or `Run tests with tox instead of pytest directly`
+- Relax the Forbidden list — e.g., `Imports inside functions are allowed for lazy loading of heavy modules`
+- Adjust naming conventions — e.g., `Use PascalCase for schema field names to match the external API`
+- Override project type conventions — e.g., `This is a Django project; follow Django conventions for views and models`
+- Change style thresholds — e.g., `Max function length is 50 lines for data transformation functions`
