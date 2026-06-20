@@ -1,0 +1,64 @@
+---
+description: Ask the user at the start of every new chat whether to follow the full development workflow
+alwaysApply: true
+---
+
+# Chat-Start Triage
+
+At the **very beginning** of every new chat, before doing anything else, check for in-progress work:
+
+1. Run `git branch --show-current`
+2. If the branch is **not** `main`, `master`, `develop`, or `staging`, use the **Resume-Aware Triage**.
+3. Otherwise, use the **Standard Triage**.
+
+## Standard Triage
+
+Use the `AskQuestion` tool:
+
+title: "Chat Mode"
+prompt: "Should this chat follow the full development workflow?"
+options:
+  - id: full
+    label: "Yes — full dev workflow (planning, branching, PRs, quality checks)"
+  - id: fix
+    label: "Fix a bug (TDD approach — failing test first, then fix)"
+  - id: quick
+    label: "No — quick task / exploration (skip workflow steps, keep code quality rules)"
+
+## Resume-Aware Triage
+
+Use the `AskQuestion` tool, including the detected branch name:
+
+title: "Chat Mode"
+prompt: "You're on branch `<branch-name>`. Want to continue this work or start something new?"
+options:
+  - id: continue
+    label: "Continue current work (resume dev workflow on this branch)"
+  - id: subbranch
+    label: "Start a sub-branch (new task branching from current branch)"
+  - id: full
+    label: "Start a new dev workflow (different issue)"
+  - id: fix
+    label: "Fix a bug (TDD approach — failing test first, then fix)"
+  - id: quick
+    label: "Quick task / exploration (skip workflow steps, keep code quality rules)"
+
+## Behavior Based on Answer
+
+**Continue current work** (`continue`): Read `.cursor/skills/dev-workflow/SKILL.md` and follow its **Resume** section — the agent will extract the issue from the branch name, fetch context, and pick up where the previous chat left off. Also enforce all rules from `.cursor/rules/quality.mdc`.
+
+**Start a sub-branch** (`subbranch`): Read `.cursor/skills/dev-workflow/SKILL.md` and follow its **Sub-Branch Workflow** section — the agent will create a child branch from the current branch, reuse the current issue, and target the parent branch for PRs. Also enforce all rules from `.cursor/rules/quality.mdc`.
+
+**Full dev workflow** (`full`): Read and follow `.cursor/skills/dev-workflow/SKILL.md` from Step 1 — planning before coding, feature branches, incremental commits, PR process. Also enforce all rules from `.cursor/rules/quality.mdc`.
+
+**Fix a bug** (`fix`): Read and follow `.cursor/skills/dev-workflow/SKILL.md` from Step 1, auto-applying the `bug` label to the issue. TDD discipline is enforced during implementation (write a failing test before fixing). Also enforce all rules from `.cursor/rules/quality.mdc`.
+
+**Quick task / exploration** (`quick`): Skip the structured workflow steps (mandatory planning phase, feature branches, PRs, release process). Still enforce all code quality rules defined in `.cursor/rules/quality.mdc`.
+
+## Overridable Defaults
+
+These settings can be overridden per project by creating `dev-workflow-activation.overrides.mdc` in the same rules directory. Example overrides:
+
+- Add, remove, or rename triage options (e.g., add a "deploy" mode or remove the "fix a bug" option)
+- Change which branches are treated as main branches (default: `main`, `master`, `develop`, `staging`)
+- Change the default behavior when no workflow is selected
