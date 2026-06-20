@@ -1,0 +1,30 @@
+---
+alwaysApply: true
+---
+
+# Code Quality Rules
+
+These rules apply to **every** chat, regardless of whether the full dev workflow is active.
+
+## Code Quality
+
+### Type Hints
+
+Use type hints for all function signatures and class attributes.
+
+### No Obvious Comments
+
+Do not add comments that merely narrate what the code does. Comments should explain non-obvious intent, trade-offs, or constraints that the code itself cannot convey.
+
+### Clean Formatting
+
+Run the project's formatter and linter before committing. All pre-commit checks must pass.
+
+## Overridable Defaults
+
+These settings can be overridden per project by creating `quality.overrides.mdc` in the same rules directory. Example overrides:
+
+- Relax type hint requirements — e.g., `Type hints are optional for files under migrations/ and generated/`
+- Adjust comment policy — e.g., `Narration comments are acceptable in files under docs/ and tutorials/`
+- Specify project-specific formatter or linter commands — e.g., `Use ruff format instead of black`
+- Exclude specific paths from pre-commit checks — e.g., `Skip pre-commit checks for vendor/ and third_party/`
