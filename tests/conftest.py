@@ -7,18 +7,22 @@ import time
 
 import pytest
 import transaction
+from pyramid.request import Request
 from sqlalchemy import create_engine
 from temporalio.client import Client
-from temporalio.worker import Worker
 from testing.postgresql import PostgresqlFactory
 from webtest import TestApp
 
-from pyramid_temporal import PyramidTemporalInterceptor
+from pyramid_temporal import PyramidEnvironment, Worker
 from tests.app import create_app
 from tests.app.models import Base, get_session_maker, get_tm_session
 from tests.app.workflows import UserEnrichmentWorkflow, enrich_user_activity
 
 logger = logging.getLogger(__name__)
+
+# Temporal server address. The devcontainer runs Temporal as the "temporal"
+# compose service, reachable from the dev container by that service name.
+TEMPORAL_HOST = "temporal:7233"
 
 
 def handler(postgresql):
@@ -92,10 +96,16 @@ def dbsession(db_session_factory, tm):
 
 
 @pytest.fixture
+def temporal_host():
+    """Temporal server address used by the tests."""
+    return TEMPORAL_HOST
+
+
+@pytest.fixture
 def app_settings():
     """Create base application settings for testing."""
     return {
-        "pyramid_temporal.temporal_host": "localhost:7233",
+        "pyramid_temporal.temporal_host": TEMPORAL_HOST,
         "pyramid_temporal.auto_connect": "true",  # Always enable Temporal for our tests
         "pyramid_temporal.log_level": "DEBUG",
     }
@@ -105,8 +115,9 @@ def app_settings():
 def temporal_client():
     """Create Temporal client for testing.
 
-    Note: This requires a running Temporal server.
-    Start with: docker-compose -f .dev-local/docker-compose.yml up -d
+    Requires a running Temporal server reachable at TEMPORAL_HOST. The
+    devcontainer provides it as the "temporal" compose service; if it is
+    unavailable the dependent tests are skipped.
     """
     try:
         # Try to connect to local Temporal server
@@ -114,7 +125,7 @@ def temporal_client():
         asyncio.set_event_loop(loop)
 
         async def create_client():
-            return await Client.connect("localhost:7233")
+            return await Client.connect(TEMPORAL_HOST)
 
         client = loop.run_until_complete(create_client())
         yield client
@@ -125,37 +136,41 @@ def temporal_client():
 
 
 @pytest.fixture
-def temporal_worker(temporal_client, dbsession, tm):
-    """Create Temporal worker with pyramid_temporal interceptor."""
+def temporal_worker(temporal_client, pyramid_app, dbsession, tm):
+    """Create a pyramid-temporal Worker bound to the test session and transaction.
 
-    # Create a session factory that returns the test session
-    # This ensures the temporal worker uses the same session as the test
-    def test_session_factory():
-        return dbsession
+    pyramid-temporal builds a real Pyramid request for each activity. We expose
+    the test's session and transaction manager through that request's environ so
+    the activity shares the exact session the test verifies against, and the
+    test's doomed transaction rolls everything back afterwards.
 
-    # Create worker with pyramid_temporal transaction management
+    Note: the activity runs on the worker thread and shares the test's session,
+    so the test must rely on ``poll_query`` for synchronization (it waits for the
+    activity to finish) rather than reading the session concurrently.
+    """
+    env_request = Request.blank("/")
+    env_request.environ["app.dbsession"] = dbsession
+    env_request.environ["tm.manager"] = tm
+    env_request.environ["tm.active"] = True
+
+    env = PyramidEnvironment(registry=pyramid_app.registry, request=env_request)
+
     worker = Worker(
         temporal_client,
+        env,
         task_queue="pyramid-temporal-test",
         workflows=[UserEnrichmentWorkflow],
         activities=[enrich_user_activity],
-        interceptors=[
-            PyramidTemporalInterceptor(
-                db_session_factory=test_session_factory, transaction_manager=tm  # Use the test's transaction manager
-            )
-        ],
     )
 
-    # Start worker in background thread
+    # Start worker in background thread. Temporal queues the workflow until the
+    # worker polls, so no startup sleep is needed; poll_query waits for the result.
     def run_worker():
         asyncio.set_event_loop(asyncio.new_event_loop())
         asyncio.get_event_loop().run_until_complete(worker.run())
 
     worker_thread = threading.Thread(target=run_worker, daemon=True)
     worker_thread.start()
-
-    # Give worker a moment to start
-    time.sleep(1)
 
     yield worker
 

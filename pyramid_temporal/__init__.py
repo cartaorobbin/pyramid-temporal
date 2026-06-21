@@ -147,6 +147,18 @@ def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
     temporal_host = settings.get("pyramid_temporal.temporal_host", "localhost:7233")
     temporal_namespace = settings.get("pyramid_temporal.temporal_namespace", "default")
 
+    # Connecting needs a synchronous context. If we are already inside a running
+    # event loop we cannot block on it, so defer and let the client be created
+    # on demand instead.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("Event loop already running, Temporal client will be created on-demand")
+        config.registry["temporal_client"] = None
+        return
+
     try:
         logger.info(
             "Connecting to Temporal server at: %s (namespace=%s)",
@@ -154,26 +166,9 @@ def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
             temporal_namespace,
         )
 
-        # Create async function to connect to Temporal
-        async def create_temporal_client():
-            return await Client.connect(temporal_host, namespace=temporal_namespace)
-
-        # Create new event loop if needed and connect
-        try:
-            # Try to get existing loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If loop is running, we'll defer connection
-                logger.warning("Event loop already running, Temporal client will be created on-demand")
-                config.registry["temporal_client"] = None
-                return
-        except RuntimeError:
-            # No event loop, create one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        # Connect to Temporal
-        temporal_client = loop.run_until_complete(create_temporal_client())
+        # asyncio.run manages its own event loop, so there is no shared/closed
+        # loop to leak and the connect coroutine is always awaited.
+        temporal_client = asyncio.run(Client.connect(temporal_host, namespace=temporal_namespace))
 
         # Register client in registry
         config.registry["temporal_client"] = temporal_client

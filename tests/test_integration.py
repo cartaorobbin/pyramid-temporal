@@ -2,9 +2,36 @@
 
 import logging
 
+from pyramid.config import Configurator
+
 from tests.app.models import User
 
 logger = logging.getLogger(__name__)
+
+
+def test_configured_namespace_reaches_temporal_client(temporal_client, temporal_host):
+    """The configured namespace must be forwarded to the connected Temporal client.
+
+    This exercises ``_setup_temporal_client`` end-to-end: including pyramid_temporal
+    with ``auto_connect`` enabled connects a real client, and the connected client
+    must carry the namespace coming from the settings.
+
+    Depends on ``temporal_client`` so the test is skipped when no Temporal server
+    is available, matching the existing integration test pattern.
+    """
+    config = Configurator(
+        settings={
+            "pyramid_temporal.auto_connect": "true",
+            "pyramid_temporal.temporal_host": temporal_host,
+            "pyramid_temporal.temporal_namespace": "pyramid-temporal-test-ns",
+        }
+    )
+    config.include("pyramid_temporal")
+
+    client = config.registry["temporal_client"]
+
+    assert client is not None, "Temporal client should be connected and registered"
+    assert client.namespace == "pyramid-temporal-test-ns"
 
 
 def test_user_creation_and_enrichment(webtest_app, temporal_worker, temporal_client, dbsession, poll_query):
@@ -57,7 +84,7 @@ def test_user_creation_and_enrichment(webtest_app, temporal_worker, temporal_cli
     logger.info("Step 3: Polling for user enrichment completion")
 
     # Create query to check for enriched user
-    enriched_query = dbsession.query(User).filter(User.id == user_id, User.enriched is True)
+    enriched_query = dbsession.query(User).filter(User.id == user_id, User.enriched.is_(True))
 
     # Poll until user is enriched or timeout
     success = poll_query(enriched_query, timeout=15.0, description=f"user {user_id} enrichment")
