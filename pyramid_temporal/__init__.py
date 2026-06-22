@@ -141,6 +141,15 @@ def includeme(config: "Configurator") -> None:
     logger.info("pyramid-temporal configuration complete")
 
 
+def _event_loop_is_running() -> bool:
+    """Return True if called from within a running asyncio event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
     """Setup Temporal client and register it in the registry."""
 
@@ -150,14 +159,12 @@ def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
     # Connecting needs a synchronous context. If we are already inside a running
     # event loop we cannot block on it, so defer and let the client be created
     # on demand instead.
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        pass
-    else:
+    if _event_loop_is_running():
         logger.warning("Event loop already running, Temporal client will be created on-demand")
         config.registry["temporal_client"] = None
         return
+
+    logger.debug("No running event loop; connecting to Temporal synchronously")
 
     try:
         logger.info(
