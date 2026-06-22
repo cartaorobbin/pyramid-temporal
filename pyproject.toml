@@ -14,7 +14,7 @@ packages = [
 ptemporal-worker = "pyramid_temporal.cli:ptemporal_worker"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
+python = ">=3.10,<4.0"
 temporalio = "^1.15.0"
 transaction = "^5.0"
 zope-interface = "^7.2"

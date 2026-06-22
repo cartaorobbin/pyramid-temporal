@@ -83,6 +83,7 @@ def includeme(config: "Configurator") -> None:
 
     Configuration settings:
     - pyramid_temporal.temporal_host: Temporal server host (default: localhost:7233)
+    - pyramid_temporal.temporal_namespace: Temporal namespace (default: default)
     - pyramid_temporal.log_level: Logging level (default: INFO)
     - pyramid_temporal.auto_connect: Auto-connect to Temporal on startup (default: True)
 
@@ -115,6 +116,9 @@ def includeme(config: "Configurator") -> None:
     if "pyramid_temporal.temporal_host" not in settings:
         settings["pyramid_temporal.temporal_host"] = "localhost:7233"
 
+    if "pyramid_temporal.temporal_namespace" not in settings:
+        settings["pyramid_temporal.temporal_namespace"] = "default"
+
     if "pyramid_temporal.auto_connect" not in settings:
         settings["pyramid_temporal.auto_connect"] = "true"
 
@@ -137,34 +141,41 @@ def includeme(config: "Configurator") -> None:
     logger.info("pyramid-temporal configuration complete")
 
 
+def _event_loop_is_running() -> bool:
+    """Return True if called from within a running asyncio event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
     """Setup Temporal client and register it in the registry."""
 
     temporal_host = settings.get("pyramid_temporal.temporal_host", "localhost:7233")
+    temporal_namespace = settings.get("pyramid_temporal.temporal_namespace", "default")
+
+    # Connecting needs a synchronous context. If we are already inside a running
+    # event loop we cannot block on it, so defer and let the client be created
+    # on demand instead.
+    if _event_loop_is_running():
+        logger.warning("Event loop already running, Temporal client will be created on-demand")
+        config.registry["temporal_client"] = None
+        return
+
+    logger.debug("No running event loop; connecting to Temporal synchronously")
 
     try:
-        logger.info("Connecting to Temporal server at: %s", temporal_host)
+        logger.info(
+            "Connecting to Temporal server at: %s (namespace=%s)",
+            temporal_host,
+            temporal_namespace,
+        )
 
-        # Create async function to connect to Temporal
-        async def create_temporal_client():
-            return await Client.connect(temporal_host)
-
-        # Create new event loop if needed and connect
-        try:
-            # Try to get existing loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If loop is running, we'll defer connection
-                logger.warning("Event loop already running, Temporal client will be created on-demand")
-                config.registry["temporal_client"] = None
-                return
-        except RuntimeError:
-            # No event loop, create one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        # Connect to Temporal
-        temporal_client = loop.run_until_complete(create_temporal_client())
+        # asyncio.run manages its own event loop, so there is no shared/closed
+        # loop to leak and the connect coroutine is always awaited.
+        temporal_client = asyncio.run(Client.connect(temporal_host, namespace=temporal_namespace))
 
         # Register client in registry
         config.registry["temporal_client"] = temporal_client
