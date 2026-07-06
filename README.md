@@ -131,6 +131,60 @@ def main(global_config, **settings):
 
 The same configuration works for both web requests and Temporal activities!
 
+### Starting and Signaling Workflows from Sync Code
+
+Pyramid views and event subscribers run synchronously, but the Temporal client is async.
+pyramid-temporal hides the sync->async bridge so you never re-implement `Client.connect` +
+`asyncio.run` yourself.
+
+In a view or subscriber, use the request methods (they read connection settings automatically):
+
+```python
+def create_reversal_view(request):
+    # ... build workflow_input ...
+    run_id = request.temporal_start_workflow(
+        ReversalWorkflow.run,
+        workflow_input,
+        id=f"reversal-{reversal_id}",
+    )
+    # signal a running workflow
+    request.temporal_signal_workflow(workflow_id, run_id, "provider_return_received")
+```
+
+In request-free code (e.g. a CLI command), use the module-level functions:
+
+```python
+from pyramid_temporal import start_workflow, signal_workflow
+
+run_id = start_workflow(
+    temporal_host="localhost:7233",
+    namespace="default",
+    task_queue="payments",
+    workflow_run=CreateChargeWorkflow.run,
+    arg=workflow_input,
+    id=workflow_id,
+)
+
+# Pass wait=True to block until the workflow finishes and get its result instead:
+result = start_workflow(
+    temporal_host="localhost:7233",
+    namespace="default",
+    task_queue="payments",
+    workflow_run=CreateChargeWorkflow.run,
+    arg=workflow_input,
+    id=workflow_id,
+    wait=True,
+)
+```
+
+Connection settings for the request methods come from the registry:
+
+- `pyramid_temporal.temporal_host` (default `localhost:7233`)
+- `pyramid_temporal.temporal_namespace` (default `default`); the alias
+  `pyramid_temporal.namespace` is also accepted and takes precedence
+- `pyramid_temporal.task_queue` (default `default`); override per call with the
+  `task_queue=` keyword
+
 ### CLI Usage
 
 Start workers using the CLI command:
@@ -212,6 +266,24 @@ worker = Worker(
     workflows=[...],  # List of workflows
 )
 ```
+
+### Client helpers
+
+Registered request methods (read connection settings from the registry):
+
+- `request.temporal_start_workflow(workflow_run, arg, *, id, task_queue=None) -> run_id` —
+  defaults to the required `pyramid_temporal.task_queue` setting; pass `task_queue=` to
+  override for a single call
+- `request.temporal_signal_workflow(workflow_id, run_id, signal, *args) -> None`
+
+Request-free functions (for CLIs and scripts):
+
+- `pyramid_temporal.start_workflow(*, temporal_host, namespace, task_queue, workflow_run, arg, id, wait=False) -> run_id`
+  — returns the `run_id`; pass `wait=True` to block until the workflow completes and return its result instead
+- `pyramid_temporal.signal_workflow(*, temporal_host, namespace, workflow_id, run_id, signal, args=()) -> None`
+
+Both run the async client on a dedicated worker thread, so they are safe to call from
+synchronous views, subscribers, and CLI commands.
 
 ## Development
 

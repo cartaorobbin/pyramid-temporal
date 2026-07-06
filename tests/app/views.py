@@ -1,6 +1,5 @@
 """Pyramid views for testing pyramid-temporal integration."""
 
-import asyncio
 import logging
 import uuid
 from typing import Any, Dict
@@ -61,23 +60,14 @@ def create_user_view(request) -> Dict[str, Any]:
         user_id = user.id
         logger.info("Created user with ID: %s", user_id)
 
-        # Get Temporal client from request (provided by pyramid_temporal)
-        temporal_client = request.temporal_client
-
-        # Start enrichment workflow
+        # Start enrichment workflow via the pyramid_temporal request method,
+        # which hides the sync->async bridge.
         workflow_id = f"enrich-user-{user_id}-{uuid.uuid4().hex[:8]}"
-
-        # Create a new event loop for this operation
-        async def start_workflow_async():
-            return await temporal_client.start_workflow(
-                UserEnrichmentWorkflow.run,
-                user_id,
-                id=workflow_id,
-                task_queue="pyramid-temporal-test",
-            )
-
-        # Use asyncio.run to properly handle the async operation
-        asyncio.run(start_workflow_async())
+        request.temporal_start_workflow(
+            UserEnrichmentWorkflow.run,
+            user_id,
+            id=workflow_id,
+        )
 
         logger.info("Started enrichment workflow: %s", workflow_id)
         user_dict = user.to_dict()
