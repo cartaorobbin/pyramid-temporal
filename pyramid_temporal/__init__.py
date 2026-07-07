@@ -39,12 +39,13 @@ Example:
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional, Tuple
 
 from temporalio.client import Client
 
 if TYPE_CHECKING:
     from pyramid.config import Configurator
+    from pyramid.request import Request
 
 __version__ = "0.0.1"
 
@@ -52,6 +53,7 @@ __version__ = "0.0.1"
 # Create an 'activity' module-like namespace for @activity.defn syntax
 from . import activity
 from .activity import PyramidActivity, defn, is_pyramid_activity
+from .client import signal_workflow, start_workflow
 from .context import ActivityContext
 from .environment import PyramidEnvironment
 from .interceptor import PyramidTemporalInterceptor
@@ -68,6 +70,9 @@ __all__ = [
     "defn",
     "PyramidActivity",
     "is_pyramid_activity",
+    # Synchronous client helpers (request-free, e.g. for CLIs)
+    "start_workflow",
+    "signal_workflow",
     # Pyramid integration
     "includeme",
 ]
@@ -83,9 +88,16 @@ def includeme(config: "Configurator") -> None:
 
     Configuration settings:
     - pyramid_temporal.temporal_host: Temporal server host (default: localhost:7233)
-    - pyramid_temporal.temporal_namespace: Temporal namespace (default: default)
+    - pyramid_temporal.temporal_namespace: Temporal namespace (default: default).
+      The alias pyramid_temporal.namespace is also accepted and takes precedence.
+    - pyramid_temporal.task_queue: Default task queue for started workflows (default: default)
     - pyramid_temporal.log_level: Logging level (default: INFO)
     - pyramid_temporal.auto_connect: Auto-connect to Temporal on startup (default: True)
+
+    Request methods registered:
+    - request.temporal_client: The connected async Temporal client (or None).
+    - request.temporal_start_workflow(workflow_run, arg, *, id, task_queue=None) -> run_id
+    - request.temporal_signal_workflow(workflow_id, run_id, signal, *args) -> None
 
     Args:
         config: Pyramid configurator instance
@@ -119,6 +131,9 @@ def includeme(config: "Configurator") -> None:
     if "pyramid_temporal.temporal_namespace" not in settings:
         settings["pyramid_temporal.temporal_namespace"] = "default"
 
+    if "pyramid_temporal.task_queue" not in settings:
+        settings["pyramid_temporal.task_queue"] = "default"
+
     if "pyramid_temporal.auto_connect" not in settings:
         settings["pyramid_temporal.auto_connect"] = "true"
 
@@ -137,6 +152,10 @@ def includeme(config: "Configurator") -> None:
 
     # Add request method to get Temporal client
     config.add_request_method(_get_temporal_client, "temporal_client", reify=True)
+
+    # Add request methods to start/signal workflows from synchronous code
+    config.add_request_method(temporal_start_workflow, "temporal_start_workflow")
+    config.add_request_method(temporal_signal_workflow, "temporal_signal_workflow")
 
     logger.info("pyramid-temporal configuration complete")
 
@@ -189,6 +208,66 @@ def _setup_temporal_client(config: "Configurator", settings: dict) -> None:
         config.registry["temporal_client"] = None
 
 
-def _get_temporal_client(request):
+def _get_temporal_client(request: "Request") -> Optional[Client]:
     """Get Temporal client from request registry."""
     return request.registry.get("temporal_client")
+
+
+def _client_settings(request: "Request") -> Tuple[str, str, str]:
+    """Resolve (host, namespace, task_queue) from settings.
+
+    The namespace accepts two keys for compatibility: the canonical
+    ``pyramid_temporal.temporal_namespace`` and the alias
+    ``pyramid_temporal.namespace`` (which takes precedence when set).
+    """
+    settings = request.registry.settings
+    host = settings.get("pyramid_temporal.temporal_host", "localhost:7233")
+    namespace = settings.get("pyramid_temporal.namespace") or settings.get(
+        "pyramid_temporal.temporal_namespace", "default"
+    )
+    task_queue = settings.get("pyramid_temporal.task_queue", "default")
+    return host, namespace, task_queue
+
+
+def temporal_start_workflow(
+    request: "Request",
+    workflow_run: Any,
+    arg: Any,
+    *,
+    id: str,  # noqa: A002 - mirrors temporalio's start_workflow(id=...) API
+    task_queue: Optional[str] = None,
+) -> str:
+    """Start a Temporal workflow using connection settings from the registry.
+
+    The task queue defaults to the ``pyramid_temporal.task_queue`` setting, so callers
+    can omit it. Pass ``task_queue`` to override the configured queue for a single call.
+    Returns the started workflow ``run_id``.
+    """
+    host, namespace, default_queue = _client_settings(request)
+    return start_workflow(
+        temporal_host=host,
+        namespace=namespace,
+        task_queue=task_queue or default_queue,
+        workflow_run=workflow_run,
+        arg=arg,
+        id=id,
+    )
+
+
+def temporal_signal_workflow(
+    request: "Request",
+    workflow_id: str,
+    run_id: str,
+    signal: str,
+    *args: Any,
+) -> None:
+    """Signal a running Temporal workflow using registry connection settings."""
+    host, namespace, _ = _client_settings(request)
+    signal_workflow(
+        temporal_host=host,
+        namespace=namespace,
+        workflow_id=workflow_id,
+        run_id=run_id,
+        signal=signal,
+        args=args,
+    )

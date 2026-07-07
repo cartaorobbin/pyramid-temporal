@@ -12,7 +12,7 @@ from temporalio import activity, workflow
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from pyramid_temporal import PyramidTemporalInterceptor
+from pyramid_temporal import PyramidTemporalInterceptor, signal_workflow, start_workflow
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -99,6 +99,48 @@ async def main() -> None:
     # await worker.run()
 
     logger.info("Example setup complete!")
+    logger.info(
+        "To dispatch a workflow from synchronous code, run start_and_signal_workflow() "
+        "with a running Temporal server and worker."
+    )
+
+
+def start_and_signal_workflow() -> str:
+    """Start and signal a workflow from synchronous code.
+
+    pyramid-temporal exposes request-free helpers so CLI commands and scripts never
+    re-implement Client.connect + asyncio.run themselves. This function is NOT called by
+    ``main`` because it requires a running Temporal server AND a running worker to make
+    progress; run it manually once both are up.
+
+    Inside a Pyramid view or subscriber, prefer the registered request methods, which read
+    connection settings from the registry instead of taking them as arguments::
+
+        run_id = request.temporal_start_workflow(MyWorkflow.run, "World", id="example-workflow-1")
+        request.temporal_signal_workflow("example-workflow-1", run_id, "some_signal")
+
+    Those methods read pyramid_temporal.temporal_host, pyramid_temporal.temporal_namespace,
+    and pyramid_temporal.task_queue from the registry.
+    """
+    run_id = start_workflow(
+        temporal_host="localhost:7233",
+        namespace="default",
+        task_queue="pyramid-temporal-example",
+        workflow_run=MyWorkflow.run,
+        arg="World",
+        id="example-workflow-1",
+    )
+    logger.info("Started workflow, run_id=%s", run_id)
+
+    signal_workflow(
+        temporal_host="localhost:7233",
+        namespace="default",
+        workflow_id="example-workflow-1",
+        run_id=run_id,
+        signal="some_signal",
+    )
+    logger.info("Signal delivered to workflow")
+    return run_id
 
 
 if __name__ == "__main__":

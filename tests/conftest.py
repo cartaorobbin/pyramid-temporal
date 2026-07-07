@@ -7,7 +7,8 @@ import time
 
 import pytest
 import transaction
-from pyramid.request import Request
+from pyramid.config import Configurator
+from pyramid.request import Request, apply_request_extensions
 from sqlalchemy import create_engine
 from temporalio.client import Client
 from testing.postgresql import PostgresqlFactory
@@ -102,11 +103,33 @@ def temporal_host():
 
 
 @pytest.fixture
+def configured_request():
+    """Return a factory that builds a request bound to a configured pyramid_temporal registry.
+
+    The factory accepts an optional settings dict and returns a real Pyramid request with
+    pyramid_temporal request methods applied, so client helpers can be exercised without a
+    running WSGI app.
+    """
+
+    def _make(extra_settings: dict = None) -> Request:
+        config = Configurator(settings={"pyramid_temporal.auto_connect": "false", **(extra_settings or {})})
+        config.include("pyramid_temporal")
+        config.commit()
+        request = Request.blank("/")
+        request.registry = config.registry
+        apply_request_extensions(request)
+        return request
+
+    return _make
+
+
+@pytest.fixture
 def app_settings():
     """Create base application settings for testing."""
     return {
         "pyramid_temporal.temporal_host": TEMPORAL_HOST,
         "pyramid_temporal.auto_connect": "true",  # Always enable Temporal for our tests
+        "pyramid_temporal.task_queue": "pyramid-temporal-test",
         "pyramid_temporal.log_level": "DEBUG",
     }
 
