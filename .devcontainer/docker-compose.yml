@@ -1,4 +1,3 @@
-version: '3'
 services:
   dev-service:
       # Note that the path of the Dockerfile and context is relative to the *primary*
@@ -21,9 +20,6 @@ services:
   temporal:
     image: temporalio/temporal:1.7.2
     command: server start-dev --ip 0.0.0.0
-    ports:
-      - "7233:7233"  # Temporal gRPC server
-      - "8233:8233"  # Temporal Web UI
     networks:
       - internal
 
