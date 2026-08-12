@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 
-from pyramid_temporal import ActivityContext, Worker, activity
+from pyramid_temporal import ActivityContext, PyramidEnvironment, Worker, activity
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +44,11 @@ async def example_activity(context: ActivityContext, message: str) -> str:
 
 
 @activity.defn
-async def database_activity(context: ActivityContext, user_id: int) -> dict:
+def database_activity(context: ActivityContext, user_id: int) -> dict:
     """Example activity that uses the database session.
 
-    This demonstrates how to use the context to access the database.
+    Written as a plain ``def``, so Temporal runs it in its activity executor and
+    the blocking database calls never occupy the worker's event loop.
     """
     logger.info("Looking up user: %s", user_id)
 
@@ -73,27 +74,27 @@ class ExampleWorkflow:
         )
 
 
-def create_worker(registry) -> Worker:
+def create_worker(env: PyramidEnvironment) -> Worker:
     """Worker factory function for ptemporal-worker command.
 
-    This function demonstrates the new pyramid-temporal API.
-    It receives a Pyramid registry and returns a configured Worker instance.
+    The command bootstraps the INI file and calls this function with the
+    resulting PyramidEnvironment.
 
     The Worker automatically:
-    - Binds pyramid-temporal activities to the context
-    - Sets up transaction management
-    - Creates database sessions per activity
+    - Gives each activity execution its own Pyramid request
+    - Manages a transaction per execution
+    - Creates the thread pool that sync activities need
 
     Args:
-        registry: Pyramid registry instance with pyramid-temporal already configured
+        env: PyramidEnvironment with pyramid-temporal already configured
 
     Returns:
         Worker: Configured pyramid-temporal Worker instance
     """
-    logger.info("Creating example worker with new API")
+    logger.info("Creating example worker")
 
     # Get Temporal client from registry (created by pyramid-temporal includeme)
-    temporal_client = registry.get("temporal_client")
+    temporal_client = env.registry.get("temporal_client")
 
     if not temporal_client:
         raise RuntimeError(
@@ -105,11 +106,11 @@ def create_worker(registry) -> Worker:
     # Create worker with pyramid-temporal - context binding is automatic!
     worker = Worker(
         temporal_client,
-        registry,  # Pyramid registry for context access
+        env,
         task_queue="example-queue",
         workflows=[ExampleWorkflow],
         activities=[example_activity, database_activity],
-        # dbsession_factory is optional - will use registry['dbsession_factory'] if available
+        max_concurrent_activities=10,
     )
 
     logger.info("Example worker created successfully")
@@ -117,7 +118,7 @@ def create_worker(registry) -> Worker:
 
 
 # Alternative factory for different task queue
-def create_priority_worker(registry) -> Worker:
+def create_priority_worker(env: PyramidEnvironment) -> Worker:
     """Alternative worker factory for priority tasks.
 
     Example of how you might create multiple workers with different configurations.
@@ -125,14 +126,14 @@ def create_priority_worker(registry) -> Worker:
     logger.info("Creating priority worker")
 
     # Get Temporal client from registry
-    temporal_client = registry.get("temporal_client")
+    temporal_client = env.registry.get("temporal_client")
 
     if not temporal_client:
         raise RuntimeError("Temporal client not found in registry. Make sure pyramid-temporal is properly configured.")
 
     worker = Worker(
         temporal_client,
-        registry,
+        env,
         task_queue="priority-queue",  # Different task queue
         workflows=[ExampleWorkflow],
         activities=[example_activity],
