@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+import uuid
 
 import pytest
 import transaction
@@ -16,6 +17,14 @@ from webtest import TestApp
 
 from pyramid_temporal import PyramidEnvironment, Worker
 from tests.app import create_app
+from tests.app.concurrent import (
+    PROBE_TASK_QUEUE,
+    ConcurrentAsyncProbeWorkflow,
+    ConcurrentSyncProbeWorkflow,
+    async_probe_activity,
+    reset_rendezvous,
+    sync_probe_activity,
+)
 from tests.app.models import Base, get_session_maker, get_tm_session
 from tests.app.workflows import UserEnrichmentWorkflow, enrich_user_activity
 
@@ -198,6 +207,78 @@ def temporal_worker(temporal_client, pyramid_app, dbsession, tm):
     yield worker
 
     # Worker will be automatically cleaned up when thread exits
+
+
+@pytest.fixture
+def pyramid_env():
+    """Return a PyramidEnvironment backed by a minimal registry, without a database.
+
+    Enough to build activity requests, so the binding tests can exercise a full
+    activity execution without a Temporal server or a database.
+    """
+    config = Configurator(settings={"pyramid_temporal.auto_connect": "false"})
+    config.include("pyramid_temporal")
+    config.commit()
+    return PyramidEnvironment(registry=config.registry)
+
+
+@pytest.fixture
+def probe_labels():
+    """Two unique labels, one per concurrent probe execution."""
+    run = uuid.uuid4().hex[:8]
+    return [f"probe-{run}-a", f"probe-{run}-b"]
+
+
+@pytest.fixture
+def reset_probes():
+    """Clear the probe rendezvous state around each batch of executions."""
+    reset_rendezvous()
+    yield
+    reset_rendezvous()
+
+
+@pytest.fixture
+def concurrent_worker(temporal_client, pyramid_app, reset_probes):
+    """Run a worker with two activity slots and no shared request state.
+
+    The environment carries no base request, so nothing injects a shared
+    dbsession or transaction manager: each execution builds its own session and
+    its own transaction manager through pyramid_tm's explicit_manager hook, and
+    commits for real. That is what lets the tests observe per-execution
+    transactions.
+
+    The worker is served through ``async with`` and shut down on teardown, so a
+    finished test never leaves a poller competing for the next test's tasks.
+    """
+    env = PyramidEnvironment(registry=pyramid_app.registry)
+
+    worker = Worker(
+        temporal_client,
+        env,
+        task_queue=PROBE_TASK_QUEUE,
+        workflows=[ConcurrentAsyncProbeWorkflow, ConcurrentSyncProbeWorkflow],
+        activities=[async_probe_activity, sync_probe_activity],
+        max_concurrent_activities=2,
+    )
+
+    stop = threading.Event()
+
+    async def serve():
+        async with worker:
+            while not stop.is_set():
+                await asyncio.sleep(0.05)
+
+    def run_worker():
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        asyncio.get_event_loop().run_until_complete(serve())
+
+    worker_thread = threading.Thread(target=run_worker, daemon=True)
+    worker_thread.start()
+
+    yield worker
+
+    stop.set()
+    worker_thread.join(timeout=15)
 
 
 @pytest.fixture

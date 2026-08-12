@@ -8,7 +8,7 @@
 
 **pyramid-temporal** provides automatic transaction management for Temporal activities using `pyramid_tm`, exactly how it works for web requests.
 
-This library gives Temporal activities **real Pyramid requests** (via `pyramid.scripting.prepare`), so all your existing request methods work automatically - `request.dbsession`, `request.tm`, and any other methods configured via `add_request_method`.
+This library gives Temporal activities **real Pyramid requests** (built with Pyramid's request factory and request extensions), so all your existing request methods work automatically - `request.dbsession`, `request.tm`, and any other methods configured via `add_request_method`.
 
 - **Github repository**: <https://github.com/cartaorobbin/pyramid-temporal/>
 - **Documentation** <https://cartaorobbin.github.io/pyramid-temporal/>
@@ -19,9 +19,11 @@ This library gives Temporal activities **real Pyramid requests** (via `pyramid.s
 - **Automatic Transaction Management**: Uses `pyramid_tm` - same as web requests
 - **Full Pyramid Integration**: All `add_request_method` configurations work automatically
 - **PyramidEnvironment**: Clean wrapper for bootstrap environment with access to app, registry, root
-- **Unit of Work Pattern**: Each activity runs in its own transactional scope with fresh request
+- **Unit of Work Pattern**: Each execution runs in its own transactional scope with a fresh request
+- **Safe Concurrency**: Nothing is shared between executions, so `max_concurrent_activities` can be raised
+- **Async or Sync Activities**: Write `async def` for cooperative work, or plain `def` to run blocking work in Temporal's activity thread pool
 - **Clean Activity Code**: No manual transaction handling or context setup needed
-- **Custom Worker**: `pyramid_temporal.Worker` handles context binding automatically
+- **Custom Worker**: `pyramid_temporal.Worker` handles activity binding automatically
 
 ## Quick Start
 
@@ -81,6 +83,26 @@ class UserOnboardingWorkflow:
         return True
 ```
 
+### Blocking Activities
+
+Write the activity as a plain `def` whenever its body blocks - synchronous
+database work, HTTP calls, or gRPC calls. Temporal runs sync activities in the
+worker's activity thread pool, so a slow or stuck call never occupies the event
+loop and never delays the other activities the worker is running:
+
+```python
+@activity.defn
+def import_orders(context: ActivityContext, batch_id: int) -> int:
+    """Blocking body: runs in the activity thread pool, not on the event loop."""
+    session = context.request.dbsession
+    orders = provider_client.fetch(batch_id)  # blocking gRPC/HTTP is fine here
+    session.add_all(orders)
+    return len(orders)
+```
+
+An `async def` activity still runs on the worker's event loop, so it must only
+block cooperatively (`await`). Both flavours receive the same `ActivityContext`.
+
 ### Worker Setup
 
 ```python
@@ -88,22 +110,42 @@ from pyramid_temporal import Worker, PyramidEnvironment
 
 def create_worker(env: PyramidEnvironment):
     """Create worker with Pyramid integration.
-    
+
     Args:
         env: PyramidEnvironment from bootstrap (provided by CLI)
     """
     client = env.registry.get('temporal_client')
-    
-    # Worker automatically binds activities to context
+
+    # Worker automatically binds activities to the environment
     worker = Worker(
         client,
         env,  # Full Pyramid environment
         task_queue="my-queue",
-        activities=[enrich_user, send_notification],
+        activities=[enrich_user, send_notification, import_orders],
         workflows=[UserOnboardingWorkflow],
+        max_concurrent_activities=10,
     )
     return worker
 ```
+
+### Concurrency
+
+Every activity execution owns its `ActivityContext`, its Pyramid request, and
+therefore its own `dbsession` and `tm`. Executions share nothing, so
+`max_concurrent_activities` can be set as high as your database pool allows.
+
+Two things are worth checking in the application configuration:
+
+- **Use an explicit transaction manager**: set
+  `tm.manager_hook = pyramid_tm.explicit_manager` in your settings. Without it,
+  `request.tm` falls back to the process-wide `transaction.manager`, which
+  concurrent async executions would share on the event loop thread.
+- **Size the database pool** for the number of activity slots, since each
+  concurrent execution checks out its own connection.
+
+For sync activities the worker creates a `ThreadPoolExecutor` sized to
+`max_concurrent_activities` (Temporal's default of 100 when unset). Pass your own
+`activity_executor=` to control it yourself.
 
 ### Pyramid Configuration
 
@@ -195,29 +237,59 @@ ptemporal-worker development.ini myapp.workers.create_worker
 
 ## How It Works
 
-pyramid-temporal uses `pyramid.scripting.prepare` to give activities real Pyramid requests:
+Registering an activity binds it to the Pyramid environment. Every call of that
+bound activity is one execution, and one execution is one unit of work:
 
 1. **Bootstrap** → `PyramidEnvironment` wraps the full Pyramid bootstrap (app, registry, root)
-2. **Activity Starts** → Real Pyramid Request created via `pyramid.scripting.prepare`
-3. **Context Injected** → `ActivityContext` provides access to real request with all methods
-4. **Activity Succeeds** → Transaction commits automatically (via `pyramid_tm`)
-5. **Activity Fails** → Transaction aborts automatically
-6. **Cleanup** → Request context closed via `prepare()`'s closer
+2. **Activity Starts** → A fresh `ActivityContext` builds a real Pyramid Request with Pyramid's request factory, then applies your `add_request_method` extensions
+3. **Transaction Begins** → Using that request's own `request.tm`
+4. **Context Injected** → The activity body receives the context and reads `context.request`
+5. **Activity Succeeds** → Transaction commits automatically (via `pyramid_tm`)
+6. **Activity Fails** → Transaction aborts automatically
+7. **Cleanup** → Finished callbacks run and the request is closed
 
 This is exactly how `pyramid_tm` works for web requests - your activities use the same patterns.
+
+### Pyramid threadlocals
+
+`context.request` is the supported way to reach the request, and it works in
+every activity. `pyramid.threadlocal.get_current_request()` depends on the
+flavour, because Pyramid's threadlocal stack lives on the thread:
+
+| Activity | `get_current_request()` | `get_current_registry()` |
+| --- | --- | --- |
+| Sync (`def`) | this execution's request | the application registry |
+| Async (`async def`) | `None` | the application registry |
+
+A sync activity owns its thread in the activity executor, so its request can be
+published there safely. Concurrent async executions share the worker's event loop
+thread, where a per-execution request cannot be isolated, so the registry is
+published alone rather than handing out another execution's request.
 
 ## API Reference
 
 ### `@activity.defn`
 
-Decorator to define a pyramid-temporal activity with context injection:
+Decorator to define a pyramid-temporal activity with context injection. Works on
+`async def` and on plain `def`:
 
 ```python
 @activity.defn
 async def my_activity(context: ActivityContext, arg1: str, arg2: int) -> bool:
     session = context.request.dbsession
     # ...
+
+@activity.defn
+def my_blocking_activity(context: ActivityContext, arg1: str) -> bool:
+    session = context.request.dbsession
+    # ... blocking work, run in the activity thread pool ...
 ```
+
+Keyword arguments:
+
+- `name=` - register under a custom activity name (defaults to the function name)
+- `no_thread_cancel_exception=` - for sync activities, skip raising the
+  cancellation exception inside the activity thread
 
 ### `PyramidEnvironment`
 
@@ -243,7 +315,8 @@ env.close()
 
 ### `ActivityContext`
 
-Context object passed to activities:
+Context object passed to activities. One context belongs to one execution, and
+accessing `context.request` outside of an execution raises `RuntimeError`:
 
 - `context.env` - Full `PyramidEnvironment`
 - `context.registry` - Pyramid registry (shortcut to `env.registry`)
@@ -255,17 +328,24 @@ Context object passed to activities:
 
 ### `Worker`
 
-Pyramid-aware Temporal worker:
+Pyramid-aware Temporal worker. Any additional keyword argument is passed
+straight to `temporalio.worker.Worker`:
 
 ```python
 worker = Worker(
-    client,           # Temporal client
-    env,              # PyramidEnvironment (required)
-    task_queue="...", # Task queue name
-    activities=[...], # List of activities
-    workflows=[...],  # List of workflows
+    client,                        # Temporal client
+    env,                           # PyramidEnvironment (required)
+    task_queue="...",              # Task queue name
+    activities=[...],              # List of activities
+    workflows=[...],               # List of workflows
+    max_concurrent_activities=10,  # Safe to raise above 1
 )
 ```
+
+- `worker.env` - the `PyramidEnvironment` activities are bound to
+- `worker.task_queue` - the polled task queue
+- `worker.activity_executor` - the thread pool the worker created for sync
+  activities, or `None` when it created none
 
 ### Client helpers
 

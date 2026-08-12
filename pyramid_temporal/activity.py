@@ -5,12 +5,14 @@ dependency injection of Pyramid context into Temporal activities.
 """
 
 import functools
+import inspect
 import logging
 from typing import Any, Callable, Optional, TypeVar
 
 from temporalio import activity as temporal_activity
 
-from .context import ActivityContext
+from .environment import PyramidEnvironment
+from .execution import activity_execution
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ def defn(
     fn: Optional[F] = None,
     *,
     name: Optional[str] = None,
-    no_thread_cancel_default: bool = False,
+    no_thread_cancel_exception: bool = False,
 ) -> Any:
     """Decorator to define a pyramid-temporal activity.
 
@@ -42,13 +44,24 @@ def defn(
             # ... do work ...
             return True
 
+    A plain ``def`` works too, and is the better choice whenever the body
+    blocks. Temporal runs sync activities in its activity executor, so a
+    blocking call never occupies the worker's event loop:
+
+        @activity.defn
+        def my_blocking_activity(context: ActivityContext, user_id: int) -> bool:
+            session = context.request.dbsession
+            # ... blocking HTTP, gRPC, or database work ...
+            return True
+
     Args:
         fn: The activity function (when used without parentheses)
         name: Optional custom name for the activity. Defaults to function name.
-        no_thread_cancel_default: Whether to disable thread cancellation by default.
+        no_thread_cancel_exception: Whether Temporal should skip raising the
+            cancellation exception in the activity thread. Sync activities only.
 
     Returns:
-        A decorated activity that can be bound to a context via the Worker.
+        A decorated activity that the Worker binds to its Pyramid environment.
 
     Example:
         @activity.defn
@@ -68,7 +81,7 @@ def defn(
         activity = PyramidActivity(
             func,
             name=name,
-            no_thread_cancel_default=no_thread_cancel_default,
+            no_thread_cancel_exception=no_thread_cancel_exception,
         )
         return activity
 
@@ -81,26 +94,26 @@ def defn(
 class PyramidActivity:
     """Wrapper for pyramid-temporal activities.
 
-    This class wraps an activity function and provides the ability to
-    bind it to an ActivityContext for execution.
+    This class wraps an activity function and provides the ability to bind it to
+    a Pyramid environment for execution.
     """
 
     def __init__(
         self,
         fn: Callable[..., Any],
         name: Optional[str] = None,
-        no_thread_cancel_default: bool = False,
+        no_thread_cancel_exception: bool = False,
     ) -> None:
         """Initialize the pyramid activity wrapper.
 
         Args:
             fn: The original activity function
             name: Optional custom activity name
-            no_thread_cancel_default: Thread cancellation setting
+            no_thread_cancel_exception: Thread cancellation setting, sync only
         """
         self._fn = fn
         self._name = name or fn.__name__
-        self._no_thread_cancel_default = no_thread_cancel_default
+        self._no_thread_cancel_exception = no_thread_cancel_exception
 
         # Copy function metadata for better debugging
         functools.update_wrapper(self, fn)
@@ -118,34 +131,49 @@ class PyramidActivity:
         """Get the original function."""
         return self._fn
 
-    def bind(self, context: ActivityContext) -> Callable[..., Any]:
-        """Bind this activity to a context, returning a Temporal-compatible activity.
+    @property
+    def is_async(self) -> bool:
+        """Whether the activity body is a coroutine function."""
+        return inspect.iscoroutinefunction(self._fn)
 
-        This creates a wrapper class that injects the context as the first
-        argument when the activity is executed.
+    def bind(self, env: PyramidEnvironment) -> Callable[..., Any]:
+        """Bind this activity to a Pyramid environment for Temporal registration.
+
+        Every call of the returned activity is one execution, and owns its own
+        ActivityContext, Pyramid request, and transaction. Nothing is shared
+        between executions, so they are safe to run concurrently.
+
+        An async activity binds to a coroutine function, which Temporal runs on
+        the worker's event loop. A sync activity binds to a plain function, which
+        Temporal runs in its activity executor, so a blocking body leaves the
+        event loop free.
 
         Args:
-            context: The ActivityContext to bind to
+            env: The PyramidEnvironment each execution builds its request from
 
         Returns:
-            A bound activity method that can be registered with Temporal Worker
+            An activity that can be registered with a Temporal Worker
         """
         fn = self._fn
         name = self._name
 
-        class BoundActivity:
-            """Bound activity class for Temporal registration."""
-
-            def __init__(self, ctx: ActivityContext) -> None:
-                self.context = ctx
+        if self.is_async:
 
             @temporal_activity.defn(name=name)
-            async def execute(self, *args: Any, **kwargs: Any) -> Any:
-                """Execute the activity with context injection."""
-                return await fn(self.context, *args, **kwargs)
+            async def execute_async(*args: Any, **kwargs: Any) -> Any:
+                """Execute one async activity execution with context injection."""
+                with activity_execution(env, threadlocal_request=False) as context:
+                    return await fn(context, *args, **kwargs)
 
-        instance = BoundActivity(context)
-        return instance.execute
+            return execute_async
+
+        @temporal_activity.defn(name=name, no_thread_cancel_exception=self._no_thread_cancel_exception)
+        def execute_sync(*args: Any, **kwargs: Any) -> Any:
+            """Execute one sync activity execution with context injection."""
+            with activity_execution(env, threadlocal_request=True) as context:
+                return fn(context, *args, **kwargs)
+
+        return execute_sync
 
     def __repr__(self) -> str:
         return f"<PyramidActivity '{self._name}'>"

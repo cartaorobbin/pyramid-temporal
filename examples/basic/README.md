@@ -8,6 +8,7 @@ This example demonstrates the fundamental usage of pyramid-temporal with the `pt
 - How to configure pyramid-temporal via INI file
 - How to use the `ptemporal-worker` CLI command
 - Basic activity with automatic transaction management
+- Async and sync activities side by side
 - Simple workflow execution
 
 ## Files
@@ -63,30 +64,30 @@ This example demonstrates the fundamental usage of pyramid-temporal with the `pt
 The `create_worker()` function in `worker.py` demonstrates:
 
 ```python
-def create_worker(registry) -> Worker:
+def create_worker(env: PyramidEnvironment) -> Worker:
     """Worker factory function for ptemporal-worker command."""
     # Get Temporal client from pyramid registry (created by includeme)
-    temporal_client = registry.get('temporal_client')
-    
+    temporal_client = env.registry.get('temporal_client')
+
     if not temporal_client:
         raise RuntimeError("Temporal client not found - check your configuration")
-    
-    # Create worker with pyramid-temporal interceptor
+
     return Worker(
         temporal_client,
+        env,
         task_queue="example-queue",
         workflows=[ExampleWorkflow],
-        activities=[example_activity],
-        interceptors=[PyramidTemporalInterceptor()],  # Automatic transactions!
+        activities=[example_activity, database_activity],
+        max_concurrent_activities=10,
     )
 ```
 
 ### Key Points
 
-1. **Factory Signature**: Must accept a `registry` parameter (Pyramid registry)
-2. **Return Type**: Must return a `temporalio.worker.Worker` instance
-3. **Interceptor**: Include `PyramidTemporalInterceptor()` for transaction management
-4. **Client Access**: Get the Temporal client from `registry.get('temporal_client')`
+1. **Factory Signature**: Must accept a `PyramidEnvironment` parameter, which `ptemporal-worker` builds from the INI file
+2. **Return Type**: Must return a `pyramid_temporal.Worker` (a plain `temporalio.worker.Worker` also runs, without the Pyramid integration)
+3. **Transactions**: Automatic. Each activity execution gets its own request and its own transaction, so `max_concurrent_activities` can be raised freely
+4. **Client Access**: Get the Temporal client from `env.registry.get('temporal_client')`
 
 ### Configuration
 
@@ -105,11 +106,22 @@ Activities automatically get transaction management:
 
 ```python
 @activity.defn
-async def example_activity(message: str) -> str:
+async def example_activity(context: ActivityContext, message: str) -> str:
     # No manual transaction handling needed!
     # Database operations here will be automatically transactional
     logger.info("Processing message: %s", message)
     return f"Processed: {message}"
+```
+
+An activity whose body blocks should be a plain `def`. Temporal then runs it in
+the worker's activity thread pool instead of on the event loop:
+
+```python
+@activity.defn
+def database_activity(context: ActivityContext, user_id: int) -> dict:
+    session = context.request.dbsession
+    # Blocking queries, HTTP calls, or gRPC calls belong here
+    return {"id": user_id}
 ```
 
 ## What Happens When You Run It
