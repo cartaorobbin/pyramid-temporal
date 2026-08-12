@@ -13,6 +13,11 @@ Activities receive real Pyramid Request objects (via Pyramid's request factory),
 so all request methods configured via add_request_method work automatically
 (dbsession, tm, etc.).
 
+Each activity execution owns its request and its transaction, so activities can
+run concurrently. Activities may be written as ``async def`` or as plain ``def``;
+sync ones run in Temporal's activity executor, which keeps a blocking body off
+the worker's event loop.
+
 Example:
     from pyramid.paster import bootstrap
     from pyramid_temporal import Worker, activity, ActivityContext, PyramidEnvironment
@@ -56,7 +61,7 @@ from .activity import PyramidActivity, defn, is_pyramid_activity
 from .client import signal_workflow, start_workflow
 from .context import ActivityContext
 from .environment import PyramidEnvironment
-from .interceptor import PyramidTemporalInterceptor
+from .execution import activity_execution
 from .worker import Worker
 
 __all__ = [
@@ -64,12 +69,13 @@ __all__ = [
     "Worker",
     "PyramidEnvironment",
     "ActivityContext",
-    "PyramidTemporalInterceptor",
     # Activity decorator
     "activity",
     "defn",
     "PyramidActivity",
     "is_pyramid_activity",
+    # Execution scope (one request and one transaction per activity execution)
+    "activity_execution",
     # Synchronous client helpers (request-free, e.g. for CLIs)
     "start_workflow",
     "signal_workflow",
