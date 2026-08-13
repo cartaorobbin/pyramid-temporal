@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyramid_temporal"
-version = "0.1.0"
+version = "0.1.1"
 description = "This project bind the config and transaction from pyramid to temporal"
 authors = ["Robbin dev team <fdev@robbin.com.br>"]
 repository = "https://github.com/cartaorobbin/pyramid-temporal"
