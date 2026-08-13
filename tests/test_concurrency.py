@@ -7,10 +7,16 @@ the executions provably overlap while they report what their context exposes.
 
 import logging
 
+import pytest
+
 from pyramid_temporal import start_workflow
 from tests.app.concurrent import (
     PROBE_TASK_QUEUE,
+    ConcurrentAsyncAbortWorkflow,
+    ConcurrentAsyncIsolationWorkflow,
     ConcurrentAsyncProbeWorkflow,
+    ConcurrentSyncAbortWorkflow,
+    ConcurrentSyncIsolationWorkflow,
     ConcurrentSyncProbeWorkflow,
     probe_email,
 )
@@ -96,3 +102,68 @@ def test_sync_activity_exposes_its_request_to_pyramid_threadlocals(concurrent_wo
 
     assert [report["threadlocal_request_is_own"] for report in reports] == [True, True]
     assert [report["threadlocal_registry_is_app"] for report in reports] == [True, True]
+
+
+@pytest.mark.parametrize(
+    ("workflow_run", "workflow_id_prefix"),
+    [
+        (ConcurrentAsyncIsolationWorkflow.run, "concurrent-async-isolation"),
+        (ConcurrentSyncIsolationWorkflow.run, "concurrent-sync-isolation"),
+    ],
+    ids=["async", "sync"],
+)
+def test_overlapping_activities_cannot_see_each_others_uncommitted_writes(
+    concurrent_worker, temporal_host, probe_labels, dbsession, workflow_run, workflow_id_prefix
+):
+    """An overlapping execution must not see the other execution's uncommitted row."""
+    reports = start_workflow(
+        temporal_host=temporal_host,
+        namespace=NAMESPACE,
+        task_queue=PROBE_TASK_QUEUE,
+        workflow_run=workflow_run,
+        arg=probe_labels,
+        id=f"{workflow_id_prefix}-{probe_labels[0]}",
+        wait=True,
+    )
+
+    assert [report["saw_sibling_uncommitted"] for report in reports] == [False, False]
+
+    dbsession.expire_all()
+    emails = [probe_email(label) for label in probe_labels]
+    committed = dbsession.query(User).filter(User.email.in_(emails)).all()
+
+    assert sorted(user.name for user in committed) == sorted(probe_labels)
+
+
+@pytest.mark.parametrize(
+    ("workflow_run", "workflow_id_prefix"),
+    [
+        (ConcurrentAsyncAbortWorkflow.run, "concurrent-async-abort"),
+        (ConcurrentSyncAbortWorkflow.run, "concurrent-sync-abort"),
+    ],
+    ids=["async", "sync"],
+)
+def test_overlapping_activity_abort_does_not_roll_back_the_other(
+    concurrent_worker, temporal_host, probe_labels, dbsession, workflow_run, workflow_id_prefix
+):
+    """Aborting one overlapping execution must leave the other execution's commit intact."""
+    commit_label, abort_label = probe_labels
+    result = start_workflow(
+        temporal_host=temporal_host,
+        namespace=NAMESPACE,
+        task_queue=PROBE_TASK_QUEUE,
+        workflow_run=workflow_run,
+        arg={"commit": commit_label, "abort": abort_label},
+        id=f"{workflow_id_prefix}-{commit_label}",
+        wait=True,
+    )
+
+    assert result["commit_ok"] is True
+    assert result["abort_failed"] is True
+
+    dbsession.expire_all()
+    committed = dbsession.query(User).filter(User.email == probe_email(commit_label)).one()
+    aborted = dbsession.query(User).filter(User.email == probe_email(abort_label)).first()
+
+    assert committed.name == commit_label
+    assert aborted is None

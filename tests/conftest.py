@@ -19,10 +19,20 @@ from pyramid_temporal import PyramidEnvironment, Worker
 from tests.app import create_app
 from tests.app.concurrent import (
     PROBE_TASK_QUEUE,
+    ConcurrentAsyncAbortWorkflow,
+    ConcurrentAsyncIsolationWorkflow,
     ConcurrentAsyncProbeWorkflow,
+    ConcurrentSyncAbortWorkflow,
+    ConcurrentSyncIsolationWorkflow,
     ConcurrentSyncProbeWorkflow,
+    async_abort_activity,
+    async_commit_activity,
+    async_isolation_activity,
     async_probe_activity,
     reset_rendezvous,
+    sync_abort_activity,
+    sync_commit_activity,
+    sync_isolation_activity,
     sync_probe_activity,
 )
 from tests.app.models import Base, get_session_maker, get_tm_session
@@ -256,8 +266,24 @@ def concurrent_worker(temporal_client, pyramid_app, reset_probes):
         temporal_client,
         env,
         task_queue=PROBE_TASK_QUEUE,
-        workflows=[ConcurrentAsyncProbeWorkflow, ConcurrentSyncProbeWorkflow],
-        activities=[async_probe_activity, sync_probe_activity],
+        workflows=[
+            ConcurrentAsyncAbortWorkflow,
+            ConcurrentAsyncIsolationWorkflow,
+            ConcurrentAsyncProbeWorkflow,
+            ConcurrentSyncAbortWorkflow,
+            ConcurrentSyncIsolationWorkflow,
+            ConcurrentSyncProbeWorkflow,
+        ],
+        activities=[
+            async_abort_activity,
+            async_commit_activity,
+            async_isolation_activity,
+            async_probe_activity,
+            sync_abort_activity,
+            sync_commit_activity,
+            sync_isolation_activity,
+            sync_probe_activity,
+        ],
         max_concurrent_activities=2,
     )
 
