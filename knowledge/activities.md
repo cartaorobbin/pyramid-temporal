@@ -92,3 +92,11 @@ ones run in Temporal's activity executor.
 - **The regression tests rely on a rendezvous, not on sleeps.** `tests/app/concurrent.py`
   makes each probe wait for the other, with a timeout, so a worker that serializes
   executions fails the activity instead of quietly passing a timing-based assertion.
+  Identity checks (`id(request)`, `id(tm)`, `id(session)`) only prove distinct Python
+  objects. Isolation is asserted by each probe flushing its row, then querying the
+  sibling email during the rendezvous: a shared session would see that flush, independent
+  transactions must not. The isolation probes take a second rendezvous after that
+  query so neither execution can commit before the other has looked; on the async
+  path the event loop would otherwise finish and commit one activity before the
+  sibling queries. Independent abort is asserted the same way, except one execution
+  raises after the rendezvous; only the other execution's row is committed.
