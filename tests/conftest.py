@@ -5,6 +5,8 @@ import logging
 import threading
 import time
 import uuid
+from datetime import timedelta
+from typing import Any, Sequence
 
 import pytest
 import transaction
@@ -230,6 +232,43 @@ def pyramid_env():
     config.include("pyramid_temporal")
     config.commit()
     return PyramidEnvironment(registry=config.registry)
+
+
+@pytest.fixture
+def run_workflow(temporal_client, pyramid_env):
+    """Return a function that runs one workflow to completion on a worker of its own.
+
+    The worker lives only for the call, and the environment carries no base
+    request, so each activity execution builds its own. The execution timeout
+    bounds the wait: a workflow task that keeps failing is retried forever by
+    Temporal, and without the timeout the caller would block instead of failing.
+
+    ``asyncio.run`` owns the loop, so the fixture depends on no loop another
+    fixture happened to leave current.
+    """
+
+    def _run(workflow_cls: type, arg: Any, *, activities: Sequence[Any], task_queue: str) -> Any:
+        worker = Worker(
+            temporal_client,
+            pyramid_env,
+            task_queue=task_queue,
+            activities=activities,
+            workflows=[workflow_cls],
+        )
+
+        async def serve_and_execute() -> Any:
+            async with worker:
+                return await temporal_client.execute_workflow(
+                    workflow_cls.run,
+                    arg,
+                    id=f"{task_queue}-{uuid.uuid4().hex[:8]}",
+                    task_queue=task_queue,
+                    execution_timeout=timedelta(seconds=20),
+                )
+
+        return asyncio.run(serve_and_execute())
+
+    return _run
 
 
 @pytest.fixture

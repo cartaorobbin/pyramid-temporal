@@ -83,7 +83,7 @@ class MyWorkflow:
         """Run the workflow with transactional activities."""
         try:
             result = await workflow.execute_activity(
-                my_transactional_activity.name,
+                my_transactional_activity,
                 name,
                 start_to_close_timeout=timedelta(seconds=60),
             )

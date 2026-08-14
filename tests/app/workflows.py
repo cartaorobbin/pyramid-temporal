@@ -65,7 +65,7 @@ class UserEnrichmentWorkflow:
         logger.info("Starting user enrichment workflow for user_id: %s", user_id)
 
         result = await workflow.execute_activity(
-            enrich_user_activity.name,
+            enrich_user_activity,
             user_id,
             schedule_to_close_timeout=timedelta(seconds=60),
             start_to_close_timeout=timedelta(seconds=30),

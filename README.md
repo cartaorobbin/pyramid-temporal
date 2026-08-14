@@ -83,6 +83,30 @@ class UserOnboardingWorkflow:
         return True
 ```
 
+### Referencing Activities from Workflows
+
+Pass the decorated activity itself, as above, and Temporal resolves it to the
+name the `Worker` registered it under. Its registered name works too:
+
+```python
+# the activity's declared types travel with it
+await workflow.execute_activity(
+    enrich_user, user_id, schedule_to_close_timeout=timedelta(seconds=60)
+)
+# also valid, and the result arrives as plain JSON
+await workflow.execute_activity(
+    enrich_user.name, user_id, schedule_to_close_timeout=timedelta(seconds=60)
+)
+```
+
+Referencing the activity is the better default, since Temporal then converts the
+result back into the type the activity declared instead of handing the workflow
+a `dict`. The name is the way out when the workflow module must not import the
+activity module - which includes any workflow that needs Temporal's sandbox,
+because importing pyramid-temporal pulls in Pyramid, and the sandbox cannot
+reload it. Declare those workflows `@workflow.defn(sandboxed=False)`, as the
+Quick Start above does.
+
 ### Blocking Activities
 
 Write the activity as a plain `def` whenever its body blocks - synchronous
@@ -102,6 +126,32 @@ def import_orders(context: ActivityContext, batch_id: int) -> int:
 
 An `async def` activity still runs on the worker's event loop, so it must only
 block cooperatively (`await`). Both flavours receive the same `ActivityContext`.
+
+### Calling an Activity Directly
+
+An activity body is callable, given a context to run in. `activity_execution`
+provides one, with the same request and transaction an execution would get, so a
+test can exercise the body without a Temporal server:
+
+```python
+import pytest
+from pyramid_temporal import PyramidEnvironment, activity_execution
+
+@pytest.fixture
+def env(app_registry):  # your app's configured registry
+    return PyramidEnvironment(registry=app_registry)
+
+def test_import_orders(env, batch):
+    with activity_execution(env, threadlocal_request=True) as context:
+        assert import_orders(context, batch.id) == 12
+```
+
+An `async def` activity returns its coroutine, for the caller to await.
+
+Register activities with `pyramid_temporal.Worker`, never with
+`temporalio.worker.Worker`: only the former binds them to the Pyramid
+environment. An activity that reaches Temporal unbound is refused with a
+`TypeError` rather than running with no request and no transaction.
 
 ### Worker Setup
 
@@ -290,6 +340,19 @@ Keyword arguments:
 - `name=` - register under a custom activity name (defaults to the function name)
 - `no_thread_cancel_exception=` - for sync activities, skip raising the
   cancellation exception inside the activity thread
+
+The first parameter must be the `ActivityContext`, and every type an activity
+annotates must be importable at runtime - Temporal reads those annotations to
+convert arguments and results, so a type imported only under `TYPE_CHECKING` is
+refused. Both are reported when the activity is decorated.
+
+The decorated activity is what workflow code references, and what a test calls
+directly:
+
+- `activity.name` - the name the `Worker` registers it under
+- `activity.is_async` - whether the body is a coroutine function
+- `workflow.execute_activity(activity, ...)` - resolves to `activity.name`
+- `activity(context, *args)` - runs the body inside an existing execution
 
 ### `PyramidEnvironment`
 

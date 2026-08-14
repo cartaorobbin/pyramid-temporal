@@ -5,8 +5,9 @@
 Gives each Temporal activity execution a real Pyramid request and a transaction of
 its own. `@activity.defn` marks a function as a pyramid-temporal activity, the
 `Worker` binds it to a `PyramidEnvironment`, and every call of the bound activity
-is one isolated unit of work. Activities may be `async def` or plain `def`; sync
-ones run in Temporal's activity executor.
+is one isolated unit of work. Workflow code references the decorated activity itself.
+Activities may be `async def` or plain `def`; sync ones run in Temporal's activity
+executor.
 
 ## Design Decisions
 
@@ -37,6 +38,39 @@ ones run in Temporal's activity executor.
   to `max_concurrent_activities` (Temporal's default of 100 when unset) and shuts it down
   after `run()` / `__aexit__`. A caller-supplied `activity_executor=` is left alone,
   including its lifetime.
+- **The decorated activity is the workflow-facing reference.** `PyramidActivity` carries a
+  `__temporal_activity_definition` and a `__call__`, so
+  `workflow.execute_activity(my_activity, ...)` resolves to the registered name. Temporal's
+  `_start_activity` accepts only a `str` or a callable, and reads `name`, `arg_types` and
+  `ret_type` off the definition; what actually runs is still the bound wrapper the worker
+  registered, and both carry the same name. Before this, the decorator returned an object
+  that was neither, so workflows had to pass `my_activity.name` and only found out at
+  runtime, as a workflow task failure.
+- **The definition spells out its types instead of letting Temporal infer them.** The
+  context argument is injected by the binding and never travels over the wire, so it is
+  stripped from `arg_types`. Inference would also be wrong in the other direction:
+  `temporalio.common._type_hints_from_func` falls back to `type(obj).__call__` for a
+  callable instance, which erases the declared return type, and `ret_type` is what converts
+  an activity result back into the type the body declared rather than leaving it as plain
+  JSON.
+- **The decorator refuses a body that cannot receive the context.** `arg_types[1:]` assumes
+  the first parameter is the context, so a body without it would make the definition claim
+  one argument fewer than the activity takes, and the mistake would only surface as an
+  activity failure. `_check_context_parameter` rejects a signature with no positional
+  parameter, and rejects a first parameter annotated as something that is not an
+  `ActivityContext`. A first parameter annotated with nothing, or with `Any`, is accepted,
+  since it claims nothing to contradict. `Any` is checked for by identity rather than left to
+  `isinstance(declared, type)`, which became True for it in Python 3.11 and would otherwise
+  make the refusal depend on the interpreter version. Temporal's own refusal of keyword-only
+  parameters is deliberately not
+  mirrored: `bind` wraps the body in `(*args, **kwargs)`, so a keyword-only parameter with a
+  default works today and rejecting it would break working activities.
+- **`__call__` refuses a first argument that is not an `ActivityContext`.** Carrying a
+  Temporal definition makes the activity registrable with a plain
+  `temporalio.worker.Worker`, which would call it with the workflow's arguments and run the
+  body with no request and no transaction. The check turns that into a `TypeError` naming
+  `pyramid_temporal.Worker`, and still allows the direct call a unit test makes with a
+  context from `activity_execution`.
 - **Threadlocals only where they can be correct.** Pyramid's `threadlocal.manager` is a
   `threading.local` stack, so it cannot isolate executions that share the event loop
   thread. A sync execution owns its thread and publishes a full `RequestContext`. An async
@@ -53,6 +87,16 @@ ones run in Temporal's activity executor.
 - `PyramidActivity.name`, `.fn`, `.is_async`, `.bind(env: PyramidEnvironment) -> Callable`.
   `bind` returns a coroutine function for an async activity and a plain function for a sync
   one, already decorated with `temporalio.activity.defn`.
+- `PyramidActivity(context, *args, **kwargs)` — runs the body inside an execution that
+  already exists, returning the coroutine for an async body. Raises `TypeError` when the
+  first argument is not an `ActivityContext`.
+- `PyramidActivity` carries `__temporal_activity_definition`, which is what
+  `workflow.execute_activity(my_activity, ...)` reads. The constant
+  `TEMPORAL_ACTIVITY_DEFINITION` holds that attribute name, since spelling the dunder inside
+  the class body would mangle it.
+- `activity.defn` raises `TypeError` for a body that cannot receive the context: no
+  positional parameter at all, or a first parameter annotated as something other than an
+  `ActivityContext`.
 - `is_pyramid_activity(obj) -> bool` — checks the `_pyramid_temporal_activity` marker,
   which is how `Worker` tells pyramid activities from plain Temporal ones.
 - `activity_execution(env, *, threadlocal_request) -> Iterator[ActivityContext]` — the unit
@@ -85,6 +129,28 @@ ones run in Temporal's activity executor.
 - **`getattr(request, "tm", None)` is the pyramid_tm probe.** No `pyramid_tm` means no
   `request.tm`, and the execution then runs with no transaction management at all rather
   than failing.
+- **An activity's annotations are resolved at decoration time.** Building the definition
+  calls `typing.get_type_hints` on the body, so a type that only exists under
+  `TYPE_CHECKING` cannot be annotated any more: `_type_hints` turns the `NameError` into a
+  `TypeError` naming the activity and the requirement. Before, the body's annotations were
+  never resolved, because the activity Temporal saw was the `(*args, **kwargs)` wrapper from
+  `bind`, so this can break an import that used to work. It matches what
+  `temporalio.activity.defn` does to every plain activity, and the alternative — dropping
+  the types — would silently stop converting arguments and results.
+- **A workflow that references an activity object cannot use Temporal's sandbox.** The
+  reference makes the workflow module import the activity module, and therefore
+  pyramid-temporal and Pyramid. Reloading that chain inside the sandbox fails on
+  `zope.interface` and, with those modules passed through, on `datetime.utcnow`. This is
+  independent of the reference itself: the same workflow fails identically when it schedules
+  the activity by name. Every workflow in `tests/app/` is `@workflow.defn(sandboxed=False)`
+  for that reason.
+- **Two private `temporalio` APIs are load-bearing.** `temporalio.activity._Definition` and
+  `temporalio.common._type_hints_from_func` build the workflow-facing definition. There is no
+  public way to attach a definition to something other than the function that
+  `temporalio.activity.defn` decorates. `tests/test_activity_definition.py` reads the
+  definition back through `_Definition.must_from_callable`, which is the exact call
+  Temporal's workflow code makes, so a `temporalio` upgrade that moves either one fails
+  loudly there instead of at a customer's workflow task.
 - **Temporal's async detection accepts callable instances**, whose `__call__` is a coroutine
   function, which is why `Worker._is_async_activity` checks `type(activity).__call__` too.
   Over-detecting a sync activity only creates an unused thread pool, since a
