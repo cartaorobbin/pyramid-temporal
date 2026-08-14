@@ -10,7 +10,9 @@ import logging
 from typing import Any, Callable, Optional, TypeVar
 
 from temporalio import activity as temporal_activity
+from temporalio import common as temporal_common
 
+from .context import ActivityContext
 from .environment import PyramidEnvironment
 from .execution import activity_execution
 
@@ -21,6 +23,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 # Marker attribute to identify pyramid-temporal activities
 PYRAMID_ACTIVITY_MARKER = "_pyramid_temporal_activity"
+
+# Where Temporal looks for an activity definition. Spelled as a constant because
+# writing the dunder name inside a class body would mangle it.
+TEMPORAL_ACTIVITY_DEFINITION = "__temporal_activity_definition"
 
 
 def defn(
@@ -54,6 +60,13 @@ def defn(
             # ... blocking HTTP, gRPC, or database work ...
             return True
 
+    Workflow code references the decorated activity itself, and Temporal reads
+    the registered name from it:
+
+        await workflow.execute_activity(
+            my_activity, user_id, start_to_close_timeout=timedelta(seconds=30)
+        )
+
     Args:
         fn: The activity function (when used without parentheses)
         name: Optional custom name for the activity. Defaults to function name.
@@ -61,7 +74,8 @@ def defn(
             cancellation exception in the activity thread. Sync activities only.
 
     Returns:
-        A decorated activity that the Worker binds to its Pyramid environment.
+        A decorated activity that the Worker binds to its Pyramid environment,
+        and that workflow code can pass to ``workflow.execute_activity``.
 
     Example:
         @activity.defn
@@ -96,6 +110,11 @@ class PyramidActivity:
 
     This class wraps an activity function and provides the ability to bind it to
     a Pyramid environment for execution.
+
+    The wrapper is what workflow code references, so it carries a Temporal
+    activity definition and is callable: ``workflow.execute_activity(my_activity,
+    ...)`` reads the registered name from that definition. What actually runs is
+    the bound wrapper ``bind`` gives the Worker, and both carry the same name.
     """
 
     def __init__(
@@ -120,6 +139,50 @@ class PyramidActivity:
 
         # Mark as pyramid-temporal activity
         setattr(self, PYRAMID_ACTIVITY_MARKER, True)
+
+        # Let workflow code reference this activity instead of its name
+        setattr(self, TEMPORAL_ACTIVITY_DEFINITION, self._temporal_definition())
+
+    def _temporal_definition(self) -> temporal_activity._Definition:
+        """Build the definition Temporal reads when a workflow references this.
+
+        The types are passed explicitly rather than left to Temporal's own
+        inference for two reasons: the context argument belongs to the binding
+        and never travels over the wire, so it must not appear in ``arg_types``;
+        and inference on a callable instance would look at ``__call__`` and lose
+        the declared return type, which is what converts an activity result back
+        into the type the body declared.
+        """
+        arg_types, ret_type = temporal_common._type_hints_from_func(self._fn)
+
+        return temporal_activity._Definition(
+            name=self._name,
+            fn=self._fn,
+            is_async=self.is_async,
+            no_thread_cancel_exception=self._no_thread_cancel_exception,
+            arg_types=arg_types[1:] if arg_types else None,
+            ret_type=ret_type,
+        )
+
+    def __call__(self, context: ActivityContext, *args: Any, **kwargs: Any) -> Any:
+        """Run the activity body inside an execution that already exists.
+
+        This is how an activity body is exercised as a plain function, given a
+        context from ``activity_execution``. Async bodies come back as their
+        coroutine, for the caller to await.
+
+        Raises:
+            TypeError: If the first argument is not an ActivityContext, which
+                means nothing bound the activity to a Pyramid environment.
+        """
+        if not isinstance(context, ActivityContext):
+            raise TypeError(
+                f"Activity '{self._name}' takes an ActivityContext as its first argument, "
+                f"got {type(context).__name__}. Register it with pyramid_temporal.Worker, "
+                "which binds the Pyramid environment, not with temporalio.worker.Worker."
+            )
+
+        return self._fn(context, *args, **kwargs)
 
     @property
     def name(self) -> str:
