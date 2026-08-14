@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 from datetime import timedelta
+from typing import Any, Sequence
 
 import pytest
 import transaction
@@ -241,9 +242,12 @@ def run_workflow(temporal_client, pyramid_env):
     request, so each activity execution builds its own. The execution timeout
     bounds the wait: a workflow task that keeps failing is retried forever by
     Temporal, and without the timeout the caller would block instead of failing.
+
+    ``asyncio.run`` owns the loop, so the fixture depends on no loop another
+    fixture happened to leave current.
     """
 
-    def _run(workflow_cls: type, arg, *, activities: list, task_queue: str):
+    def _run(workflow_cls: type, arg: Any, *, activities: Sequence[Any], task_queue: str) -> Any:
         worker = Worker(
             temporal_client,
             pyramid_env,
@@ -252,7 +256,7 @@ def run_workflow(temporal_client, pyramid_env):
             workflows=[workflow_cls],
         )
 
-        async def serve_and_execute():
+        async def serve_and_execute() -> Any:
             async with worker:
                 return await temporal_client.execute_workflow(
                     workflow_cls.run,
@@ -262,7 +266,7 @@ def run_workflow(temporal_client, pyramid_env):
                     execution_timeout=timedelta(seconds=20),
                 )
 
-        return asyncio.get_event_loop().run_until_complete(serve_and_execute())
+        return asyncio.run(serve_and_execute())
 
     return _run
 

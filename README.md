@@ -86,22 +86,26 @@ class UserOnboardingWorkflow:
 ### Referencing Activities from Workflows
 
 Pass the decorated activity itself, as above, and Temporal resolves it to the
-name the `Worker` registered it under. Its registered name works too, which is
-handy when the workflow lives in a package that must not import the activity:
+name the `Worker` registered it under. Its registered name works too:
 
 ```python
+# the activity's declared types travel with it
 await workflow.execute_activity(
     enrich_user, user_id, schedule_to_close_timeout=timedelta(seconds=60)
 )
-# equivalent
+# also valid, and the result arrives as plain JSON
 await workflow.execute_activity(
     enrich_user.name, user_id, schedule_to_close_timeout=timedelta(seconds=60)
 )
 ```
 
-Referencing the activity is the better default: the activity's argument and
-return types travel with it, so Temporal converts the result back into the type
-the activity declared instead of leaving it as plain JSON.
+Referencing the activity is the better default, since Temporal then converts the
+result back into the type the activity declared instead of handing the workflow
+a `dict`. The name is the way out when the workflow module must not import the
+activity module - which includes any workflow that needs Temporal's sandbox,
+because importing pyramid-temporal pulls in Pyramid, and the sandbox cannot
+reload it. Declare those workflows `@workflow.defn(sandboxed=False)`, as the
+Quick Start above does.
 
 ### Blocking Activities
 
@@ -130,10 +134,15 @@ provides one, with the same request and transaction an execution would get, so a
 test can exercise the body without a Temporal server:
 
 ```python
-from pyramid_temporal import activity_execution
+import pytest
+from pyramid_temporal import PyramidEnvironment, activity_execution
 
-def test_import_orders(pyramid_env, batch):
-    with activity_execution(pyramid_env, threadlocal_request=True) as context:
+@pytest.fixture
+def env(app_registry):  # your app's configured registry
+    return PyramidEnvironment(registry=app_registry)
+
+def test_import_orders(env, batch):
+    with activity_execution(env, threadlocal_request=True) as context:
         assert import_orders(context, batch.id) == 12
 ```
 
@@ -331,6 +340,11 @@ Keyword arguments:
 - `name=` - register under a custom activity name (defaults to the function name)
 - `no_thread_cancel_exception=` - for sync activities, skip raising the
   cancellation exception inside the activity thread
+
+The first parameter must be the `ActivityContext`, and every type an activity
+annotates must be importable at runtime - Temporal reads those annotations to
+convert arguments and results, so a type imported only under `TYPE_CHECKING` is
+refused. Both are reported when the activity is decorated.
 
 The decorated activity is what workflow code references, and what a test calls
 directly:

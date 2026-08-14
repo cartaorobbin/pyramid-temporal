@@ -7,7 +7,7 @@ dependency injection of Pyramid context into Temporal activities.
 import functools
 import inspect
 import logging
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, List, Optional, Tuple, TypeVar
 
 from temporalio import activity as temporal_activity
 from temporalio import common as temporal_common
@@ -153,16 +153,65 @@ class PyramidActivity:
         the declared return type, which is what converts an activity result back
         into the type the body declared.
         """
-        arg_types, ret_type = temporal_common._type_hints_from_func(self._fn)
+        arg_types, ret_type = self._type_hints()
+        self._check_context_parameter(arg_types)
 
         return temporal_activity._Definition(
             name=self._name,
             fn=self._fn,
             is_async=self.is_async,
             no_thread_cancel_exception=self._no_thread_cancel_exception,
-            arg_types=arg_types[1:] if arg_types else None,
+            arg_types=None if arg_types is None else arg_types[1:],
             ret_type=ret_type,
         )
+
+    def _type_hints(self) -> Tuple[Optional[List[type]], Optional[type]]:
+        """Resolve the body's annotations, the way Temporal resolves an activity's.
+
+        Raises:
+            TypeError: If an annotation cannot be resolved, which is what a type
+                imported only under ``TYPE_CHECKING`` leaves behind
+        """
+        try:
+            return temporal_common._type_hints_from_func(self._fn)
+        except NameError as error:
+            raise TypeError(
+                f"Activity '{self._name}' has an annotation that cannot be resolved: {error}. "
+                "Temporal reads these to convert arguments and results, so every type an "
+                "activity annotates must be importable at runtime, not only under TYPE_CHECKING."
+            ) from error
+
+    def _check_context_parameter(self, arg_types: Optional[List[type]]) -> None:
+        """Refuse a body that cannot receive the injected context.
+
+        Every execution calls the body with its context first, and the workflow
+        facing definition describes only the arguments that follow it. A body
+        without that parameter breaks both quietly: the definition would claim
+        one argument fewer than the activity takes, and the mistake would
+        surface as an activity failure rather than here, where it was made.
+
+        Raises:
+            TypeError: If the first parameter cannot be an ActivityContext
+        """
+        positional = {
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+        }
+        parameters = inspect.signature(self._fn).parameters.values()
+
+        if not any(param.kind in positional for param in parameters):
+            raise TypeError(
+                f"Activity '{self._name}' takes no positional argument, so it cannot "
+                "receive an ActivityContext. Declare it as the first parameter."
+            )
+
+        declared = arg_types[0] if arg_types else None
+        if isinstance(declared, type) and not issubclass(declared, ActivityContext):
+            raise TypeError(
+                f"Activity '{self._name}' declares {declared.__name__} as its first "
+                "parameter, which must be an ActivityContext."
+            )
 
     def __call__(self, context: ActivityContext, *args: Any, **kwargs: Any) -> Any:
         """Run the activity body inside an execution that already exists.

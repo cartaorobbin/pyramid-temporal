@@ -27,6 +27,22 @@ async def renamed_definition_activity(context: ActivityContext, count: int) -> s
     return f"counted {count}"
 
 
+@activity.defn
+def context_only_activity(context: ActivityContext) -> str:
+    """An activity the workflow calls with no arguments of its own."""
+    return "counted nothing"
+
+
+def keyword_only_body(*, count: int) -> str:
+    """Undecorated: no positional parameter, so no room for the context."""
+    return f"counted {count}"
+
+
+def unbound_body(count: int) -> str:
+    """Undecorated: a first parameter that cannot be the context."""
+    return f"counted {count}"
+
+
 def test_decorated_activity_is_callable():
     """Temporal only resolves a definition from a string or a callable."""
     assert callable(definition_activity)
@@ -77,6 +93,43 @@ def test_definition_argument_types_exclude_the_activity_context():
     defn = temporal_activity._Definition.must_from_callable(definition_activity)
 
     assert defn.arg_types == [int]
+
+
+def test_definition_argument_types_are_empty_without_arguments_of_its_own():
+    """Stripping the context leaves nothing when the context is all there is."""
+    defn = temporal_activity._Definition.must_from_callable(context_only_activity)
+
+    assert defn.arg_types == []
+
+
+def test_an_activity_with_no_positional_parameter_is_refused():
+    """Nothing could hold the context, and the definition would describe a lie."""
+    with pytest.raises(TypeError, match="takes no positional argument"):
+        activity.defn(keyword_only_body)
+
+
+def test_an_activity_whose_first_parameter_is_not_a_context_is_refused():
+    """A body written without the context fails on its first execution otherwise."""
+    with pytest.raises(TypeError, match="must be an ActivityContext"):
+        activity.defn(unbound_body)
+
+
+def test_an_annotation_that_only_exists_under_type_checking_is_refused():
+    """Temporal converts arguments and results with these, so they must be real.
+
+    The body is compiled in a namespace of its own, which is what a module whose
+    annotation is imported under ``TYPE_CHECKING`` leaves the decorator to work
+    with: a name that resolves for a type checker and nowhere else.
+    """
+    body = (
+        "from __future__ import annotations\n"
+        "def deferred_body(context: ActivityContext, amount: Decimal) -> bool: ...\n"
+    )
+    namespace = {"ActivityContext": ActivityContext}
+    exec(compile(body, "deferred.py", "exec"), namespace)  # noqa: S102
+
+    with pytest.raises(TypeError, match="annotation that cannot be resolved"):
+        activity.defn(namespace["deferred_body"])
 
 
 def test_definition_carries_the_declared_return_type():
