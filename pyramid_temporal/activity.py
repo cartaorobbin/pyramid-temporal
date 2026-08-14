@@ -21,11 +21,13 @@ logger = logging.getLogger(__name__)
 # Type variable for activity functions
 F = TypeVar("F", bound=Callable[..., Any])
 
-# Marker attribute to identify pyramid-temporal activities
+# Our own marker, so Worker can tell a pyramid activity from a plain Temporal one.
+# One underscore, because the name is ours to choose.
 PYRAMID_ACTIVITY_MARKER = "_pyramid_temporal_activity"
 
-# Where Temporal looks for an activity definition. Spelled as a constant because
-# writing the dunder name inside a class body would mangle it.
+# Temporal's attribute, spelled exactly as temporalio.activity reads it, so the two
+# underscores are not a choice. Held in a constant because writing the dunder inside
+# a class body would mangle it to _PyramidActivity__temporal_activity_definition.
 TEMPORAL_ACTIVITY_DEFINITION = "__temporal_activity_definition"
 
 
