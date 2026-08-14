@@ -58,8 +58,11 @@ executor.
   one argument fewer than the activity takes, and the mistake would only surface as an
   activity failure. `_check_context_parameter` rejects a signature with no positional
   parameter, and rejects a first parameter annotated as something that is not an
-  `ActivityContext`. An unannotated first parameter is accepted, since there is nothing to
-  contradict. Temporal's own refusal of keyword-only parameters is deliberately not
+  `ActivityContext`. A first parameter annotated with nothing, or with `Any`, is accepted,
+  since it claims nothing to contradict. `Any` is checked for by identity rather than left to
+  `isinstance(declared, type)`, which became True for it in Python 3.11 and would otherwise
+  make the refusal depend on the interpreter version. Temporal's own refusal of keyword-only
+  parameters is deliberately not
   mirrored: `bind` wraps the body in `(*args, **kwargs)`, so a keyword-only parameter with a
   default works today and rejecting it would break working activities.
 - **`__call__` refuses a first argument that is not an `ActivityContext`.** Carrying a

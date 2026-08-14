@@ -8,11 +8,13 @@ database are involved.
 """
 
 import asyncio
+from typing import Any
 
 import pytest
 from temporalio import activity as temporal_activity
 
 from pyramid_temporal import ActivityContext, activity, activity_execution
+from tests.app.deferred_annotation import deferred_annotation_body
 
 
 @activity.defn
@@ -40,6 +42,16 @@ def keyword_only_body(*, count: int) -> str:
 
 def unbound_body(count: int) -> str:
     """Undecorated: a first parameter that cannot be the context."""
+    return f"counted {count}"
+
+
+def any_context_body(context: Any, count: int) -> str:
+    """Undecorated: an annotation that claims nothing about the context."""
+    return f"counted {count}"
+
+
+def unannotated_context_body(context, count: int) -> str:
+    """Undecorated: no annotation on the context at all."""
     return f"counted {count}"
 
 
@@ -115,21 +127,19 @@ def test_an_activity_whose_first_parameter_is_not_a_context_is_refused():
 
 
 def test_an_annotation_that_only_exists_under_type_checking_is_refused():
-    """Temporal converts arguments and results with these, so they must be real.
-
-    The body is compiled in a namespace of its own, which is what a module whose
-    annotation is imported under ``TYPE_CHECKING`` leaves the decorator to work
-    with: a name that resolves for a type checker and nowhere else.
-    """
-    body = (
-        "from __future__ import annotations\n"
-        "def deferred_body(context: ActivityContext, amount: Decimal) -> bool: ...\n"
-    )
-    namespace = {"ActivityContext": ActivityContext}
-    exec(compile(body, "deferred.py", "exec"), namespace)  # noqa: S102
-
+    """Temporal converts arguments and results with these, so they must be real."""
     with pytest.raises(TypeError, match="annotation that cannot be resolved"):
-        activity.defn(namespace["deferred_body"])
+        activity.defn(deferred_annotation_body)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [any_context_body, unannotated_context_body],
+    ids=["any", "unannotated"],
+)
+def test_a_first_parameter_that_claims_nothing_is_accepted(body):
+    """Only an annotation that contradicts the context is refused."""
+    assert activity.defn(body).name == body.__name__
 
 
 def test_definition_carries_the_declared_return_type():

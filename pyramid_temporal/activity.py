@@ -206,7 +206,13 @@ class PyramidActivity:
                 "receive an ActivityContext. Declare it as the first parameter."
             )
 
+        # A first parameter annotated with nothing, or with Any, claims nothing to
+        # contradict. Any needs saying explicitly because it became a class in 3.11,
+        # and the check would otherwise refuse it there and accept it on 3.10.
         declared = arg_types[0] if arg_types else None
+        if declared is None or declared is Any:
+            return
+
         if isinstance(declared, type) and not issubclass(declared, ActivityContext):
             raise TypeError(
                 f"Activity '{self._name}' declares {declared.__name__} as its first "
