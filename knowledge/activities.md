@@ -24,10 +24,18 @@ executor.
   copies the context into the activity thread for sync activities), but it is state that
   does not need to exist.
 - **Both flavours share one context manager.** `execution.activity_execution(env, *,
-  threadlocal_request)` builds the request, begins the transaction, commits on success,
+  name, threadlocal_request)` builds the request, begins the transaction, commits on success,
   aborts on exception, and closes the request in `finally`. The async and sync wrappers
   differ only in `await` and in the threadlocal argument, so the unit of work cannot drift
-  between them.
+  between them. `name` is the activity name `bind` already registered.
+- **Lifecycle logs name the activity.** On `pyramid_temporal.execution`, the context manager
+  logs `Activity <name> started` before the body and `Activity <name> finished` after
+  `safe_commit` returns, including when that call returns `False` for a doomed transaction.
+  With no transaction manager it still logs finished after the body. A body exception logs
+  `Activity <name> failed: ...` whether or not `request.tm` exists, then aborts only when it
+  does. `Transaction committed successfully` stays on `pyramid_temporal.transaction_manager`,
+  so one thread reads start, commit, finish. A commit error raised by `safe_commit` propagates
+  from the success path and does not emit the failure line; that line is for the body.
 - **Sync activities exist for blocking bodies.** `bind` used to always emit `async def`,
   which forced a blocking body onto the worker's event loop. A stuck call there stalls the
   whole worker: Temporal marks the attempt failed server-side when
@@ -99,8 +107,9 @@ executor.
   `ActivityContext`.
 - `is_pyramid_activity(obj) -> bool` — checks the `_pyramid_temporal_activity` marker,
   which is how `Worker` tells pyramid activities from plain Temporal ones.
-- `activity_execution(env, *, threadlocal_request) -> Iterator[ActivityContext]` — the unit
-  of work. Exported, so a consumer can run an activity body outside Temporal.
+- `activity_execution(env, *, name, threadlocal_request) -> Iterator[ActivityContext]` — the
+  unit of work. `name` is required and is written into the start, finish, and failure logs.
+  Exported, so a consumer can run an activity body outside Temporal.
 - `ActivityContext(env)` — `.env`, `.registry`, `.settings`, `.request`,
   `.create_request(*, threadlocal_request=True)`, `.close_request()`. `.request` raises
   `RuntimeError` before creation and after closing; `create_request` raises if called twice
