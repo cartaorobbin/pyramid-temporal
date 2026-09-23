@@ -235,6 +235,26 @@ def pyramid_env():
 
 
 @pytest.fixture
+def transactional_pyramid_env():
+    """Return a PyramidEnvironment whose requests own a real transaction.
+
+    Includes pyramid_tm with an explicit manager and no database, so an empty
+    transaction commits and logs. The suite's doomed tm fixture is not used:
+    that path skips the commit info line.
+    """
+    config = Configurator(
+        settings={
+            "pyramid_temporal.auto_connect": "false",
+            "tm.manager_hook": "pyramid_tm.explicit_manager",
+        }
+    )
+    config.include("pyramid_tm")
+    config.include("pyramid_temporal")
+    config.commit()
+    return PyramidEnvironment(registry=config.registry)
+
+
+@pytest.fixture
 def run_workflow(temporal_client, pyramid_env):
     """Return a function that runs one workflow to completion on a worker of its own.
 

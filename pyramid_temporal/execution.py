@@ -33,7 +33,7 @@ def _begin_transaction(request: Any) -> Optional[Any]:
 
 
 @contextmanager
-def activity_execution(env: PyramidEnvironment, *, threadlocal_request: bool) -> Iterator[ActivityContext]:
+def activity_execution(env: PyramidEnvironment, *, name: str, threadlocal_request: bool) -> Iterator[ActivityContext]:
     """Give one activity execution its own request and its own transaction.
 
     The transaction commits when the body returns and aborts when it raises, and
@@ -42,6 +42,7 @@ def activity_execution(env: PyramidEnvironment, *, threadlocal_request: bool) ->
 
     Args:
         env: PyramidEnvironment the request is built from
+        name: Activity name included in the start, finish, and failure logs
         threadlocal_request: Publish the request on Pyramid's threadlocal stack.
             See ``ActivityContext.create_request``.
 
@@ -53,15 +54,17 @@ def activity_execution(env: PyramidEnvironment, *, threadlocal_request: bool) ->
     tm = None
 
     try:
+        logger.info("Activity %s started", name)
         tm = _begin_transaction(request)
         yield context
     except Exception as e:
+        logger.warning("Activity %s failed: %s", name, e)
         if tm is not None:
-            logger.warning("Activity failed with exception: %s, aborting transaction", e)
             safe_abort(tm)
         raise
     else:
         if tm is not None:
             safe_commit(tm)
+        logger.info("Activity %s finished", name)
     finally:
         context.close_request()
