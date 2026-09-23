@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from pyramid.config import Configurator
     from pyramid.request import Request
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 # Main public API
 # Create an 'activity' module-like namespace for @activity.defn syntax
