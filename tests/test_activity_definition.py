@@ -62,7 +62,7 @@ def test_decorated_activity_is_callable():
 
 def test_calling_a_sync_activity_runs_its_body(pyramid_env):
     """An activity body is callable directly, given an execution to run in."""
-    with activity_execution(pyramid_env, threadlocal_request=True) as context:
+    with activity_execution(pyramid_env, name=definition_activity.name, threadlocal_request=True) as context:
         result = definition_activity(context, 3)
 
     assert result == "counted 3"
@@ -70,7 +70,7 @@ def test_calling_a_sync_activity_runs_its_body(pyramid_env):
 
 def test_calling_an_async_activity_awaits_its_body(pyramid_env):
     """An async body is returned as its coroutine, so the caller awaits it."""
-    with activity_execution(pyramid_env, threadlocal_request=False) as context:
+    with activity_execution(pyramid_env, name=renamed_definition_activity.name, threadlocal_request=False) as context:
         result = asyncio.run(renamed_definition_activity(context, 4))
 
     assert result == "counted 4"

@@ -282,7 +282,7 @@ class PyramidActivity:
             @temporal_activity.defn(name=name)
             async def execute_async(*args: Any, **kwargs: Any) -> Any:
                 """Execute one async activity execution with context injection."""
-                with activity_execution(env, threadlocal_request=False) as context:
+                with activity_execution(env, name=name, threadlocal_request=False) as context:
                     return await fn(context, *args, **kwargs)
 
             return execute_async
@@ -290,7 +290,7 @@ class PyramidActivity:
         @temporal_activity.defn(name=name, no_thread_cancel_exception=self._no_thread_cancel_exception)
         def execute_sync(*args: Any, **kwargs: Any) -> Any:
             """Execute one sync activity execution with context injection."""
-            with activity_execution(env, threadlocal_request=True) as context:
+            with activity_execution(env, name=name, threadlocal_request=True) as context:
                 return fn(context, *args, **kwargs)
 
         return execute_sync

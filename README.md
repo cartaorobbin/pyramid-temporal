@@ -142,9 +142,13 @@ def env(app_registry):  # your app's configured registry
     return PyramidEnvironment(registry=app_registry)
 
 def test_import_orders(env, batch):
-    with activity_execution(env, threadlocal_request=True) as context:
+    with activity_execution(env, name="import_orders", threadlocal_request=True) as context:
         assert import_orders(context, batch.id) == 12
 ```
+
+`name` is required. The execution logs `Activity import_orders started`, then
+`Activity import_orders finished` after a successful commit, or
+`Activity import_orders failed: ...` if the body raises.
 
 An `async def` activity returns its coroutine, for the caller to await.
 
