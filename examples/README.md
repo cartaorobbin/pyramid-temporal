@@ -25,7 +25,7 @@ Additional examples planned:
 
 Before running any examples:
 
-1. Install pyramid-temporal: `poetry install`
+1. Install pyramid-temporal: `uv sync`
 2. Start Temporal server: `temporal server start-dev`
 3. Follow the individual example READMEs for specific setup
 

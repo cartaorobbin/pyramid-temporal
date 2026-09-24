@@ -22,6 +22,3 @@ RUN echo "source /etc/profile.d/bash_completion.sh" >> "/home/$USERNAME/.bashrc"
 
 RUN echo '# Configuring direnv' >> "/home/$USERNAME/.bashrc"
 RUN echo 'eval "$(direnv hook bash)"' >> "/home/$USERNAME/.bashrc"
-
-RUN echo '# Configuring poetry' >> "/home/$USERNAME/.bashrc"
-RUN echo 'poetry shell || true' >> "/home/$USERNAME/.bashrc"

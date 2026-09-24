@@ -10,11 +10,11 @@ Core conventions for Python development. For detailed guidance, examples, and an
 
 ## Toolchain
 
-- Package manager: **poetry**
-- Run commands with: `poetry run`
-- Formatter: black (line length 88) — `poetry run black .`
-- Linter: ruff — `poetry run ruff check .`
-- Tests: pytest — `poetry run pytest`
+- Package manager: **uv**
+- Run commands with: `uv run`
+- Formatter: black (line length 88) — `uv run black .`
+- Linter: ruff — `uv run ruff check .`
+- Tests: pytest — `uv run pytest`
 
 ## Core Rules
 
