@@ -5,6 +5,5 @@ if [ -f devcontainer.env ]; then
 fi
 
 direnv allow
-poetry config virtualenvs.create false
-poetry install
+uv sync
 

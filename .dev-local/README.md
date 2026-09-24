@@ -16,12 +16,10 @@ To set up your local development environment, run:
 ```
 
 This script will:
-1. Verify pyenv and pyenv-virtualenv are installed
-2. Install Python 3.11.7 if needed
-3. Create a virtual environment named "pyramid-temporal"
-4. Install Poetry in the virtual environment
-5. Install project dependencies
-6. Set up pre-commit hooks
+1. Verify uv is installed (`brew install uv` on Apple Silicon)
+2. Pin and install Python 3.11.7
+3. Install project dependencies with `uv sync`
+4. Set up pre-commit hooks
 
 ## Manual Setup
 

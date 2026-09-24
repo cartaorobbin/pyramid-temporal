@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+        uses: ./.github/actions/setup-uv-env
 
       - name: Export version from tag
         id: vars
@@ -25,21 +25,16 @@ jobs:
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Set version
-        run: |
-          source .venv/bin/activate
-          poetry version ${{ steps.vars.outputs.version }}
+        run: uv version --frozen ${{ steps.vars.outputs.version }}
 
       - name: Build package
         run: |
-          source .venv/bin/activate
-          make build
+          uv build
           echo "✅ Package built successfully"
 
       - name: Verify package contents
         run: |
-          source .venv/bin/activate
-          poetry run pip install twine
-          twine check dist/*
+          uvx twine check dist/*
           echo "✅ Package verification passed"
 
       - name: Publish to PyPI
@@ -59,7 +54,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+        uses: ./.github/actions/setup-uv-env
 
       - name: Deploy documentation
-        run: poetry run mkdocs gh-deploy --force
+        run: uv run mkdocs gh-deploy --force

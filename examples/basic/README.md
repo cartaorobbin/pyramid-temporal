@@ -22,7 +22,7 @@ This example demonstrates the fundamental usage of pyramid-temporal with the `pt
 1. **Install pyramid-temporal**:
    ```bash
    cd /path/to/pyramid-temporal
-   poetry install
+   uv sync
    ```
 
 2. **Start Temporal server**:

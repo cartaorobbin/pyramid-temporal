@@ -20,7 +20,7 @@ jobs:
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+        uses: ./.github/actions/setup-uv-env
 
       - name: Run checks
         run: make check
@@ -29,34 +29,27 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.10', '3.11']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
       fail-fast: false
     steps:
       - name: Check out
         uses: actions/checkout@v3
 
-      - name: Set up python
-        uses: actions/setup-python@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: 1.8.5
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached venv
+      - name: Load cached tox environments
         uses: actions/cache@v3
         with:
           path: .tox
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
+          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
 
       - name: Install tox
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install tox tox-gh-actions
+        run: uv tool install 'tox>=3.25.1,<4' --with tox-gh-actions
 
       - name: Start Temporal dev server
         run: |
@@ -81,7 +74,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up the environment
-        uses: ./.github/actions/setup-poetry-env
+        uses: ./.github/actions/setup-uv-env
 
       - name: Check if documentation can be built
-        run: poetry run mkdocs build -s
+        run: uv run mkdocs build -s
