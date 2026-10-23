@@ -9,7 +9,7 @@ on:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -26,7 +26,7 @@ jobs:
         run: make check
 
   tox:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
@@ -68,7 +68,7 @@ jobs:
         if: ${{ matrix.python-version == '3.11' }}
 
   check-docs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Check out
         uses: actions/checkout@v6
