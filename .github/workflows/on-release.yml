@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   publish-pypi:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Check out
         uses: actions/checkout@v6
@@ -46,7 +46,7 @@ jobs:
 
   deploy-docs:
     needs: publish-pypi
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
